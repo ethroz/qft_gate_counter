@@ -1,7 +1,7 @@
 module Main where
 
 import Aqft (aqft)
-import CatalyticAqft (catalyticAqft)
+import CatalyticAqft (catalytic_aqft)
 import Quipper (Circ, Format (Preview), Qubit, qubit)
 import Quipper.Internal.Printing
   ( Format (GateCount),
@@ -69,7 +69,7 @@ main = do
   let (size, approx) = case args of
         [a, b] -> (read a, read b)
         _ -> error "Usage: <program> <size> <approx>"
-  print_generic Preview catalyticAqft approx (replicate size qubit)
+  print_generic Preview catalytic_aqft approx (replicate size qubit)
 
 -- lol :: [Qubit] -> [Qubit] -> Circ [Qubit]
 -- lol x y =
