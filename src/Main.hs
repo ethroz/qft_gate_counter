@@ -99,10 +99,11 @@ baseFromString baseStr g precision = do
         "Standard" -> Standard precision (RandomSource g)
         "Strict" -> Strict precision (RandomSource g)
         "Approximate" -> Approximate True precision (RandomSource g)
-        _ -> error "Unknown base"
+        _ -> error "Unknown base"    
 
-myApp :: [String] -> IO ()
-myApp args = do
+main :: IO ()
+main = do
+    args <- getArgs
     let (size, baseStr, digits) = case args of
             [a, b, c] -> (read a, b, read c)
             _ -> error "Usage: <program> <size> <base> <digits>"
@@ -111,8 +112,3 @@ myApp args = do
     let error = 10 ** (-digits)
     let circuits_with_errors = createAllAqft size error
     mapM_ (printCircuit size base) circuits_with_errors
-
-main :: IO ()
-main = do
-    args <- getArgs
-    myApp args
