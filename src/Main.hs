@@ -2,7 +2,7 @@ module Main where
 
 import Aqft (aqft)
 import CatalyticAqft (catalytic_aqft)
-import Quipper (Circ, Format (Preview), Qubit, qubit)
+import Quipper (Circ, Qubit, qubit)
 import Quipper.Internal.Printing
   ( Format (GateCount),
     print_generic,
@@ -15,32 +15,15 @@ import Quipper.Libraries.Decompose.GateBase
 import Quipper.Libraries.Synthesis (digits)
 import Quipper.Utils.RandomSource (RandomSource (RandomSource))
 import System.Environment (getArgs)
-import System.Random (StdGen)
+import System.Random (StdGen, newStdGen)
 import Text.Printf (printf)
 
-aqftError :: Int -> Int -> Double
-aqftError n m =
-  sum
-    [ 2 * sin (pi * 2 ** (- fromIntegral j)) * fromIntegral (n - j + 1)
-      | j <- [m + 1 .. n]
-    ]
-
-createAllAqft :: Int -> Double -> [([Qubit] -> Circ [Qubit], Double, Double)]
-createAllAqft n error =
-  [ (aqft m, aqftErr, error - aqftErr)
-    | m <- [n, n -1 .. 1],
-      let aqftErr = aqftError n m,
-      error - aqftErr > 0
-  ]
-
-printCircuit :: Int -> (Precision -> GateBase) -> ([Qubit] -> Circ [Qubit], Double, Double) -> IO ()
-printCircuit size base (circ, aqftErr, decompErr) = do
-  printf "\nAQFT Error:   %f\n" aqftErr
-  printf "Decomp Error: %f\n" decompErr
-  let precision = (- log decompErr) * digits
-  let decompCirc = decompose_generic (base precision) circ
-  putStrLn "Circuit:"
-  print_generic GateCount decompCirc (replicate size qubit)
+circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
+circFromString typeStr approx =
+  case typeStr of
+    "Aqft" -> aqft approx
+    "CatAqft" -> catalytic_aqft approx
+    _ -> error "Unknown Aqft type"
 
 baseFromString :: String -> StdGen -> Precision -> GateBase
 baseFromString baseStr g precision =
@@ -51,25 +34,50 @@ baseFromString baseStr g precision =
     "Approximate" -> Approximate True precision (RandomSource g)
     _ -> error "Unknown base"
 
--- main :: IO ()
--- main = do
---   args <- getArgs
---   let (size, baseStr, digits) = case args of
---         [a, b, c] -> (read a, b, read c)
---         _ -> error "Usage: <program> <size> <base> <digits>"
---   g <- newStdGen
---   let base = baseFromString baseStr g
---   let error = 10 ** (- digits)
---   let circuits_with_errors = createAllAqft size error
---   mapM_ (printCircuit size base) circuits_with_errors
+aqftError :: Int -> Int -> Double
+aqftError n m =
+  sum
+    [ 2 * sin (pi * 2 ** (- fromIntegral j)) * fromIntegral (n - j + 1)
+      | j <- [m + 1 .. n]
+    ]
+
+createAllAqft :: (Int -> ([Qubit] -> Circ [Qubit])) -> Int -> Double -> [([Qubit] -> Circ [Qubit], Double, Double)]
+createAllAqft circFunc n error =
+  [ (circFunc m, aqftErr, error - aqftErr)
+    | m <- [n, n -1 .. 1],
+      let aqftErr = aqftError n m,
+      error - aqftErr > 0
+  ]
+
+printCircuit :: Int -> (Precision -> GateBase) -> ([Qubit] -> Circ [Qubit], Double, Double) -> IO ()
+printCircuit size baseFunc (circ, aqftErr, decompErr) = do
+  printf "\nAQFT Error:   %f\n" aqftErr
+  printf "Decomp Error: %f\n" decompErr
+  let precision = (- log decompErr) * digits
+  let decompCirc = decompose_generic (baseFunc precision) circ
+  putStrLn "Circuit:"
+  print_generic GateCount decompCirc (replicate size qubit)
 
 main :: IO ()
 main = do
   args <- getArgs
-  let (size, approx) = case args of
-        [a, b] -> (read a, read b)
-        _ -> error "Usage: <program> <size> <approx>"
-  print_generic Preview catalytic_aqft approx (replicate size qubit)
+  let (typeStr, size, baseStr, digits) = case args of
+        [a, b, c, d] -> (a, read b, c, read d)
+        _ -> error "Usage: <program> <type> <size> <base> <digits>"
+  g <- newStdGen
+  let circFunc = circFromString typeStr
+  let baseFunc = baseFromString baseStr g
+  let error = 10 ** (- digits)
+  let circuits_with_errors = createAllAqft circFunc size error
+  mapM_ (printCircuit size baseFunc) circuits_with_errors
+
+-- main :: IO ()
+-- main = do
+--   args <- getArgs
+--   let (size, approx) = case args of
+--         [a, b] -> (read a, read b)
+--         _ -> error "Usage: <program> <size> <approx>"
+--   print_generic Preview catalytic_aqft approx (replicate size qubit)
 
 -- lol :: [Qubit] -> [Qubit] -> Circ [Qubit]
 -- lol x y =
