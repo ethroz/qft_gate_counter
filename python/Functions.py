@@ -202,7 +202,7 @@ def make_catalytic_aqft_approx(size:int, approx:int)->list[Gate]:
             min_point = size + approx - 1 - i + j
             for k in range(min_point, size + approx):
                 controls = tuple([x for x in reversed(range(min_point, k))] + [i, j])
-                operations.append(Gate.create('X', k, exp, controls=controls))
+                operations.append(Gate.create('X', k, controls=controls))
         operations.append(Gate.create('H', i))
 
     return operations
