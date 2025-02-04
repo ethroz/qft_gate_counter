@@ -64,7 +64,7 @@ if __name__ == "__main__":
             (total_gate_counts, 'Total Count')
         ]))
     
-    fig, axes = plt.subplots(len(all_data[0][-1]), len(all_data), figsize=(12, 8), dpi=150)
+    fig, axes = plt.subplots(len(all_data[0][-1]), len(all_data), figsize=(12, 8), dpi=100)
     fig.suptitle(f'{args.size} Qubit AQFT with error {error} and {args.base_str} gate set', fontsize=24)
 
     for col, (type_str, x_data, data) in enumerate(all_data):
