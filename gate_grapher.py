@@ -43,7 +43,6 @@ def parse_output(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
-    parser.add_argument("type_str", metavar="TYPE", type=str, help="The type of aqft")
     parser.add_argument("size", metavar="SIZE", type=int, help="The number of qubits in the aqft")
     parser.add_argument("base_str", metavar="GATE_BASE", type=str, help="The base to decompose into")
     parser.add_argument("num_digits", metavar="DIGITS", type=float, help="The number of digits for the minimum accuracy")
@@ -51,28 +50,30 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    output = run_haskell_program(args.type_str, args.size, args.base_str, args.num_digits, args.trim_controls)
-    aqft_errors, decomp_errors, t_gate_counts, cnot_gate_counts, total_gate_counts = parse_output(output)
     error = pow(10, -args.num_digits)
-    fractional_aqft_errors = [x / error for x in aqft_errors]
-    print(fractional_aqft_errors)
-    
-    x_data = fractional_aqft_errors
-    x_label = 'Fractional Error'
-    data = [
-        (t_gate_counts, 'T Count'),
-        (cnot_gate_counts, 'CNOT Count'),
-        (total_gate_counts, 'Total Count')
-        ]
-    
-    fig, axes = plt.subplots(len(data), 1, figsize=(8, 8), dpi=150)
-    fig.suptitle(f'{args.size} Qubit {args.type_str} with error {error}', fontsize=24)
+    type_strs = ["Aqft", "CatAqft"]
+    all_data = []
 
-    for ax, (y_data, y_label) in zip(axes, data):
-        ax.plot(x_data, y_data)
-        ax.set_title(f"{x_label} vs {y_label}", fontsize=14)
-        ax.set_xlabel(x_label, fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
+    for type_str in type_strs:
+        output = run_haskell_program(type_str, args.size, args.base_str, args.num_digits, args.trim_controls)
+        aqft_errors, decomp_errors, t_gate_counts, cnot_gate_counts, total_gate_counts = parse_output(output)
+        fractional_aqft_errors = [x / error for x in aqft_errors]
+        all_data.append((type_str, fractional_aqft_errors, [
+            (t_gate_counts, 'T Count'),
+            (cnot_gate_counts, 'CNOT Count'),
+            (total_gate_counts, 'Total Count')
+        ]))
+    
+    fig, axes = plt.subplots(len(all_data[0][-1]), len(all_data), figsize=(12, 8), dpi=150)
+    fig.suptitle(f'{args.size} Qubit AQFT with error {error} and {args.base_str} gate set', fontsize=24)
+
+    for col, (type_str, x_data, data) in enumerate(all_data):
+        for row, (y_data, y_label) in enumerate(data):
+            ax = axes[row, col]
+            ax.plot(x_data, y_data)
+            ax.set_title(f"{type_str} - {y_label}", fontsize=14)
+            ax.set_xlabel('Fractional Error', fontsize=12)
+            ax.set_ylabel(y_label, fontsize=12)
 
     plt.tight_layout(pad=2)
     plt.show()
