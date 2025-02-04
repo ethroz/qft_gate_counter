@@ -2,21 +2,101 @@ module Main where
 
 import Aqft (aqft)
 import CatalyticAqft (catalytic_aqft)
+import Options.Applicative
+  ( Parser,
+    argument,
+    auto,
+    execParser,
+    fullDesc,
+    header,
+    help,
+    helper,
+    info,
+    long,
+    metavar,
+    progDesc,
+    short,
+    str,
+    switch,
+    (<**>),
+  )
 import Quipper (Circ, Qubit, qubit)
 import Quipper.Internal.Printing
   ( Format (GateCount),
     print_generic,
   )
-import Quipper.Libraries.Decompose (Precision)
+import Quipper.Libraries.Decompose
+  ( GateBase (TrimControls),
+    Precision,
+  )
 import Quipper.Libraries.Decompose.GateBase
   ( GateBase (Approximate, CliffordT, Standard, Strict),
     decompose_generic,
   )
 import Quipper.Libraries.Synthesis (digits)
 import Quipper.Utils.RandomSource (RandomSource (RandomSource))
-import System.Environment (getArgs)
 import System.Random (StdGen, newStdGen)
 import Text.Printf (printf)
+
+data Sample = Sample
+  { typeStr :: String,
+    size :: Int,
+    baseStr :: String,
+    numDigits :: Double,
+    optRemoveControls :: Bool
+  }
+
+sample :: Parser Sample
+sample =
+  Sample
+    <$> argument
+      str
+      ( metavar "TYPE"
+          <> help "The type of aqft"
+      )
+    <*> argument
+      auto
+      ( metavar "SIZE"
+          <> help "The number of qubits in the aqft"
+      )
+    <*> argument
+      str
+      ( metavar "GATE_BASE"
+          <> help "The base to decompose into"
+      )
+    <*> argument
+      auto
+      ( metavar "DIGITS"
+          <> help "The number of digits for the minimum accuracy"
+      )
+    <*> switch
+      ( long "remove-controls"
+          <> short 'r'
+          <> help "Whether to remove excess controls before decomposing"
+      )
+
+main :: IO ()
+main = mainBody =<< execParser opts
+  where
+    opts =
+      info
+        (sample <**> helper)
+        ( fullDesc
+            <> progDesc "Print the gate counts for the AQFT in the specified GateBase"
+            <> header "quip - a gate counting program built with quipper"
+        )
+
+mainBody :: Sample -> IO ()
+mainBody (Sample typeStr size baseStr numDigits optRemoveControls) = do
+  g <- newStdGen
+  let circFunc =
+        if optRemoveControls
+          then decompose_generic TrimControls . circFromString typeStr
+          else circFromString typeStr
+  let baseFunc = baseFromString baseStr g
+  let error = 10 ** (- numDigits)
+  let circuits_with_errors = createAllAqft circFunc size error
+  mapM_ (printCircuit size baseFunc) circuits_with_errors
 
 circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
 circFromString typeStr approx =
@@ -57,46 +137,3 @@ printCircuit size baseFunc (circ, aqftErr, decompErr) = do
   let decompCirc = decompose_generic (baseFunc precision) circ
   putStrLn "Circuit:"
   print_generic GateCount decompCirc (replicate size qubit)
-
-main :: IO ()
-main = do
-  args <- getArgs
-  let (typeStr, size, baseStr, digits) = case args of
-        [a, b, c, d] -> (a, read b, c, read d)
-        _ -> error "Usage: <program> <type> <size> <base> <digits>"
-  g <- newStdGen
-  let circFunc = circFromString typeStr
-  let baseFunc = baseFromString baseStr g
-  let error = 10 ** (- digits)
-  let circuits_with_errors = createAllAqft circFunc size error
-  mapM_ (printCircuit size baseFunc) circuits_with_errors
-
--- main :: IO ()
--- main = do
---   args <- getArgs
---   let (size, approx) = case args of
---         [a, b] -> (read a, read b)
---         _ -> error "Usage: <program> <size> <approx>"
---   print_generic Preview catalytic_aqft approx (replicate size qubit)
-
--- lol :: [Qubit] -> [Qubit] -> Circ [Qubit]
--- lol x y =
---   if not (null x) && not (null y)
---     then do
---       comment_with_label "ENTER" (x ++ y) "qs"
---       let x' = qdint_of_qulist_lh x
---       let y' = qdint_of_qulist_lh y
---       (x'', y'') <- q_sub_in_place x' y'
---       let x_final = qulist_of_qdint_lh x''
---       let y_final = qulist_of_qdint_lh y''
---       comment_with_label "EXIT" (x_final ++ y_final) "qs"
---       return (x_final ++ y_final)
---     else return (x ++ y)
-
--- main :: IO ()
--- main = do
---   args <- getArgs
---   let (size1, size2) = case args of
---         [a, b] -> (read a, read b)
---         _ -> error "Usage: <program> <size1> <size2>"
---   print_generic Preview lol (replicate size1 qubit) (replicate size2 qubit)

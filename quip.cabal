@@ -73,7 +73,8 @@ executable quip
         random ==1.1,
         quipper-language ==0.9.0.0,
         quipper-libraries ==0.9.0.0,
-        quipper-utils ==0.9.0.0
+        quipper-utils ==0.9.0.0,
+        optparse-applicative ==0.18.1.0
 
     -- Directories containing source files.
     hs-source-dirs:   src
