@@ -70,9 +70,9 @@ sample =
           <> help "The number of digits for the minimum accuracy"
       )
     <*> switch
-      ( long "remove-controls"
-          <> short 'r'
-          <> help "Whether to remove excess controls before decomposing"
+      ( long "trim-controls"
+          <> short 't'
+          <> help "Whether to trim excess controls before decomposing"
       )
 
 main :: IO ()
