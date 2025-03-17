@@ -22,7 +22,7 @@ import Options.Applicative
     switch,
     (<**>),
   )
-import Quipper (Circ, Qubit, qubit, Format (Preview))
+import Quipper (Circ, Qubit, qubit)
 import Quipper.Internal.Printing
   ( Format (GateCount),
     print_generic,
