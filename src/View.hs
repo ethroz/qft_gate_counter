@@ -1,3 +1,5 @@
+{-# LANGUAGE GADTs #-}
+
 module Main where
 
 import Aqft (aqft)
@@ -31,12 +33,14 @@ import Quipper.Libraries.Decompose.GateBase
   ( decompose_generic,
   )
 
-data Args = Args
-  { typeStr :: String,
-    size :: Int,
-    approx :: Int,
-    optRemoveControls :: Bool
-  }
+data Args where
+  Args ::
+    { typeStr :: String,
+      size :: Int,
+      approx :: Int,
+      optRemoveControls :: Bool
+    } ->
+    Args
 
 args :: Parser Args
 args =

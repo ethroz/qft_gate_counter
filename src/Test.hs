@@ -18,8 +18,7 @@ import Quipper (Circ, Format (Preview), Qubit, qubit)
 import Quipper.Internal.Printing
   ( print_generic,
   )
-import Quipper.Libraries.Arith (qdint_of_qulist_lh, qulist_of_qdint_lh)
-import Tools (q_add_in_place)
+import Quipper.Libraries.Arith (qdint_of_qulist_lh, qulist_of_qdint_lh, q_add_in_place)
 
 data Args = Args
   {

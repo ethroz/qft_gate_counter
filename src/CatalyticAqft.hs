@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use camelCase" #-}
-module CatalyticAqft (catalytic_aqft) where
+module CatalyticAqft (catalytic_aqft, catalytic_aqft_approx_gate_count) where
 
 import Quipper
   ( Circ,
@@ -41,7 +41,7 @@ catalytic_aqft_impl approx (x : xs) as = do
 catalytic_aqft :: Int -> [Qubit] -> Circ [Qubit]
 catalytic_aqft approx qs = do
   when (approx < 1 || approx > length qs) $ error "approx must be between 1 and the number of qubits"
-  let approx' = if approx > 1 then approx else 0
+  let approx' = catalytic_aqft_approx_gate_count approx
   (qs, _) <- with_ancilla_list approx' $ \as -> do
     as <- map_hadamard as
     as <- map_phase_little_endian as
@@ -52,3 +52,6 @@ catalytic_aqft approx qs = do
     comment_with_label "EXIT: catalytic aqft" qs "qs"
     return (qs, as)
   return qs
+
+catalytic_aqft_approx_gate_count :: Int -> Int
+catalytic_aqft_approx_gate_count m = if m > 1 then m else 0

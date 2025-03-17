@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use camelCase" #-}
-module Aqft (aqft) where
+module Aqft (aqft, aqft_error, aqft_approx_gate_count) where
 
 import Quipper
   ( Circ,
@@ -42,3 +42,21 @@ aqft approx qs = do
   qs <- aqft_impl approx qs'
   comment_with_label "EXIT: aqft" qs "qs"
   return qs
+
+aqft_error :: Int -> Int -> Double
+aqft_error n m =
+  sum
+    [ 2 * sin (pi * 2 ** (- fromIntegral j)) * fromIntegral (n - j + 1)
+      | j <- [m + 1 .. n]
+    ]
+
+aqft_controlled_rotation_count :: Int -> Int -> Int
+aqft_controlled_rotation_count n m =
+  let m' = m - 1
+  in n * m' - (m * m') `div` 2 -- This should always be an integer
+
+aqft_approx_gate_count :: Int -> Int -> Int
+aqft_approx_gate_count n m = 
+  let total = aqft_controlled_rotation_count n m
+      s_or_larger_gates = aqft_controlled_rotation_count n 2
+  in total - s_or_larger_gates
