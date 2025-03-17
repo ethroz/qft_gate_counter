@@ -1,12 +1,12 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Use camelCase" #-}
-module Tools (map_phase_little_endian, q_linear_sub_in_place) where
+module Tools (map_phase_little_endian, q_quadratic_sub_in_place, q_linear_sub_in_place) where
 
 import Control.Monad (unless)
-import Quipper (Circ, Qubit, controlled, qnot, rGate, with_ancilla, gate_iX_inv)
-import Quipper.Libraries.Arith (QDInt, list_of_xint_lh, xint_of_list_lh)
+import Quipper (Circ, Qubit, controlled, gate_iX_inv, qnot, rGate, with_ancilla)
 import Quipper.Internal.Monad (gate_iX)
+import Quipper.Libraries.Arith (QDInt, list_of_xint_lh, xint_of_list_lh)
 
 map_phase_little_endian :: [Qubit] -> Circ [Qubit]
 map_phase_little_endian [] = return []
@@ -15,18 +15,45 @@ map_phase_little_endian (q : qs) = do
   q' <- rGate (length qs + 1) q
   return (q' : qs')
 
-q_linear_sub_in_place :: QDInt -> QDInt -> Circ (QDInt, QDInt)
-q_linear_sub_in_place x y = do
+q_quadratic_sub_in_place :: QDInt -> QDInt -> Circ (QDInt, QDInt)
+q_quadratic_sub_in_place x y = do
   let x' = list_of_xint_lh x
       y' = list_of_xint_lh y
-  (x', y') <- q_sub_in_place_qulist x' y'
+  (x', y') <- q_quadratic_sub_in_place_qulist x' y'
   let x = xint_of_list_lh x'
       y = xint_of_list_lh y'
   return (x, y)
 
--- Little Endian Addition
-q_sub_in_place_qulist :: [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
-q_sub_in_place_qulist xs ys = do
+-- Little Endian Subtraction
+q_quadratic_sub_in_place_qulist :: [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
+q_quadratic_sub_in_place_qulist [] [] = return ([], [])
+q_quadratic_sub_in_place_qulist xs [] = return (xs, [])
+q_quadratic_sub_in_place_qulist [] ys = return ([], ys)
+q_quadratic_sub_in_place_qulist (x : xs) (y : ys) = do
+  (y : ys) <- q_decrement (y : ys) `controlled` x
+  (xs, ys) <- q_quadratic_sub_in_place_qulist xs ys
+  return (x : xs, y : ys)
+
+q_decrement :: [Qubit] -> Circ [Qubit]
+q_decrement [] = return []
+q_decrement qs = do
+  let (qs', [q]) = splitAt (length qs - 1) qs
+  qs' <- q_decrement qs'
+  q' <- qnot q `controlled` qs'
+  return (qs' ++ [q'])
+
+q_linear_sub_in_place :: QDInt -> QDInt -> Circ (QDInt, QDInt)
+q_linear_sub_in_place x y = do
+  let x' = list_of_xint_lh x
+      y' = list_of_xint_lh y
+  (x', y') <- q_linear_sub_in_place_qulist x' y'
+  let x = xint_of_list_lh x'
+      y = xint_of_list_lh y'
+  return (x, y)
+
+-- Little Endian Subtraction
+q_linear_sub_in_place_qulist :: [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
+q_linear_sub_in_place_qulist xs ys = do
   let nx = length xs
       ny = length ys
   unless (nx == ny || nx + 1 == ny) $
