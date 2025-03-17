@@ -42,15 +42,14 @@ catalytic_aqft :: Int -> [Qubit] -> Circ [Qubit]
 catalytic_aqft approx qs = do
   when (approx < 1 || approx > length qs) $ error "approx must be between 1 and the number of qubits"
   let approx' = catalytic_aqft_approx_gate_count approx
-  (qs, _) <- with_ancilla_list approx' $ \as -> do
+  with_ancilla_list approx' $ \as -> do
     as <- map_hadamard as
     as <- map_phase_little_endian as
     comment_with_label "ENTER: catalytic aqft" qs "qs"
     comment "Reverse"
     let qs' = reverse qs
-    (qs, as) <- catalytic_aqft_impl approx' qs' as
+    (qs, _) <- catalytic_aqft_impl approx' qs' as
     comment_with_label "EXIT: catalytic aqft" qs "qs"
-    return (qs, as)
   return qs
 
 catalytic_aqft_approx_gate_count :: Int -> Int
