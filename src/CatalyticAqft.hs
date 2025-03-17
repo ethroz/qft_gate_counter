@@ -14,7 +14,7 @@ import Quipper
 import Quipper.Internal.Generic (with_ancilla_list)
 import Quipper.Internal.Labels (comment_with_label)
 import Quipper.Libraries.Arith (qdint_of_qulist_bh, qdint_of_qulist_lh, qulist_of_qdint_bh, qulist_of_qdint_lh)
-import Tools (map_phase_little_endian, q_sub_in_place)
+import Tools (map_phase_little_endian, q_linear_sub_in_place)
 import Control.Monad (when)
 
 catalytic_aqft_impl :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
@@ -33,7 +33,7 @@ catalytic_aqft_impl approx (x : xs) as = do
           (other_ancillas, ancillas) = splitAt (length as - num_ancillas) as
           x = qdint_of_qulist_bh qubits
           y = qdint_of_qulist_lh ancillas
-      (x, y) <- q_sub_in_place x y
+      (x, y) <- q_linear_sub_in_place x y
       let qs = qulist_of_qdint_bh x ++ other_qubits
           as = other_ancillas ++ qulist_of_qdint_lh y
       return (qs, as)

@@ -1,3 +1,5 @@
+{-# LANGUAGE GADTs #-}
+
 module Main where
 
 import Options.Applicative
@@ -18,12 +20,11 @@ import Quipper (Circ, Format (Preview), Qubit, qubit)
 import Quipper.Internal.Printing
   ( print_generic,
   )
-import Quipper.Libraries.Arith (qdint_of_qulist_lh, qulist_of_qdint_lh, q_add_in_place)
+import Quipper.Libraries.Arith (qdint_of_qulist_lh, qulist_of_qdint_lh)
+import Tools (q_linear_sub_in_place)
 
-data Args = Args
-  {
-    size :: Int
-  }
+data Args where
+  Args :: {size :: Int} -> Args
 
 args :: Parser Args
 args =
@@ -47,20 +48,20 @@ main = mainBody =<< execParser opts
 
 mainBody :: Args -> IO ()
 mainBody (Args size) = do
-  printCircuit size addCirc
+  printCircuit size circ
 
 printCircuit :: Int -> ([Qubit] -> Circ [Qubit]) -> IO ()
 printCircuit size circ = do
   print_generic Preview circ (replicate size qubit)
 
-addCirc :: [Qubit] -> Circ [Qubit]
-addCirc qs = do
+circ :: [Qubit] -> Circ [Qubit]
+circ qs = do
   let len = length qs
       half = len `div` 2
       (as, bs) = splitAt half qs
       aInt = qdint_of_qulist_lh as
       bInt = qdint_of_qulist_lh bs
-  (aInt, bInt) <- q_add_in_place aInt bInt
+  (aInt, bInt) <- q_linear_sub_in_place aInt bInt
   let as = qulist_of_qdint_lh aInt
       bs = qulist_of_qdint_lh bInt
       qs = as ++ bs
