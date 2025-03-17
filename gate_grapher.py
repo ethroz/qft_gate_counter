@@ -6,7 +6,7 @@ import subprocess
 
 def run_haskell_program(type_str, size, base_str, num_digits, trim_controls=False):
     cmd = [
-        "cabal", "run", "quip", "-O2", "--",
+        "cabal", "run", "count", "-O2", "--",
         type_str,
         str(size),
         base_str,

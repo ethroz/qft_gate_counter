@@ -38,7 +38,7 @@ import Quipper.Utils.RandomSource (RandomSource (RandomSource))
 import System.Random (StdGen, newStdGen)
 import Text.Printf (printf)
 
-data Sample = Sample
+data Args = Args
   { typeStr :: String,
     size :: Int,
     baseStr :: String,
@@ -46,9 +46,9 @@ data Sample = Sample
     optRemoveControls :: Bool
   }
 
-sample :: Parser Sample
-sample =
-  Sample
+args :: Parser Args
+args =
+  Args
     <$> argument
       str
       ( metavar "TYPE"
@@ -80,22 +80,23 @@ main = mainBody =<< execParser opts
   where
     opts =
       info
-        (sample <**> helper)
+        (args <**> helper)
         ( fullDesc
             <> progDesc "Print the gate counts for the AQFT in the specified GateBase"
-            <> header "quip - a gate counting program built with quipper"
+            <> header "count - a gate counting program built with quipper"
         )
 
-mainBody :: Sample -> IO ()
-mainBody (Sample typeStr size baseStr numDigits optRemoveControls) = do
+mainBody :: Args -> IO ()
+mainBody (Args typeStr size baseStr numDigits optRemoveControls) = do
   g <- newStdGen
-  let circFunc =
+  let baseCircFunc = circFromString typeStr
+      circFunc =
         if optRemoveControls
-          then decompose_generic TrimControls . circFromString typeStr
-          else circFromString typeStr
-  let baseFunc = baseFromString baseStr g
-  let error = 10 ** (- numDigits)
-  let circuits_with_errors = createAllAqft circFunc size error
+          then decompose_generic TrimControls . baseCircFunc
+          else baseCircFunc
+      baseFunc = baseFromString baseStr g
+      error = 10 ** (- numDigits)
+      circuits_with_errors = createAllAqft circFunc size error
   mapM_ (printCircuit size baseFunc) circuits_with_errors
 
 circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
@@ -134,6 +135,6 @@ printCircuit size baseFunc (circ, aqftErr, decompErr) = do
   printf "\nAQFT Error:   %f\n" aqftErr
   printf "Decomp Error: %f\n" decompErr
   let precision = (- log decompErr) * digits
-  let decompCirc = decompose_generic (baseFunc precision) circ
+      decompCirc = decompose_generic (baseFunc precision) circ
   putStrLn "Circuit:"
   print_generic GateCount decompCirc (replicate size qubit)

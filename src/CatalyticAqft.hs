@@ -21,30 +21,26 @@ catalytic_aqft_impl :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
 catalytic_aqft_impl _ [] as = return ([], as)
 catalytic_aqft_impl approx (x : xs) as = do
   (xs, as) <- catalytic_aqft_impl approx xs as
-  (xs, as) <- rotations approx x xs as
+  (xs, as) <- subtract approx xs as `controlled` x
   x <- hadamard x
   return (x : xs, as)
   where
-    rotations :: Int -> Qubit -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
-    rotations _ _ [] _ = return ([], as)
-    rotations approx c qs as = do
-      let n = length qs
-      let num_qubits = min n (approx - 1)
-      let qubits = take num_qubits qs
-      let other_qubits = take (n - num_qubits) . drop num_qubits $ qs
-      let num_ancillas = min (min n approx + 1) approx
-      let ancillas = take num_ancillas . drop (approx - num_ancillas) $ as
-      let other_ancillas = take (approx - num_ancillas) as
-      let x = qdint_of_qulist_bh qubits
-      let y = qdint_of_qulist_lh ancillas
-      (x, y) <- q_sub_in_place x y `controlled` c
-      let qs = other_qubits ++ qulist_of_qdint_bh x
-      let as = other_ancillas ++ qulist_of_qdint_lh y
+    subtract :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
+    subtract _ [] _ = return ([], as)
+    subtract approx qs as = do
+      let (qubits, other_qubits) = splitAt (approx - 1) qs
+          num_ancillas = length qs + 1
+          (other_ancillas, ancillas) = splitAt (length as - num_ancillas) as
+          x = qdint_of_qulist_bh qubits
+          y = qdint_of_qulist_lh ancillas
+      (x, y) <- q_sub_in_place x y
+      let qs = qulist_of_qdint_bh x ++ other_qubits
+          as = other_ancillas ++ qulist_of_qdint_lh y
       return (qs, as)
 
 catalytic_aqft :: Int -> [Qubit] -> Circ [Qubit]
 catalytic_aqft approx qs = do
-  when (approx < 1 || approx > length qs) $ error "approx must be between 1 and the length of the qubit list"
+  when (approx < 1 || approx > length qs) $ error "approx must be between 1 and the number of qubits"
   let approx' = if approx > 1 then approx else 0
   (qs, _) <- with_ancilla_list approx' $ \as -> do
     as <- map_hadamard as
