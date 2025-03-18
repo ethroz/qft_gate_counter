@@ -43,37 +43,40 @@ def parse_output(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
+    parser.add_argument("type", metavar="TYPE", type=str, choices=["Aqft", "CatAqft"], help="The type of AQFT to use")
     parser.add_argument("size", metavar="SIZE", type=int, help="The number of qubits in the aqft")
     parser.add_argument("num_digits", metavar="DIGITS", type=float, help="The number of digits for the minimum accuracy")
-    parser.add_argument("base_str", metavar="GATE_BASE", type=str, help="The base to decompositionose into")
-    parser.add_argument("--trim-controls", "-t", action="store_true", help="Whether to trim excess controls before decompositionosing")
+    parser.add_argument("base_str", metavar="GATE_BASE", nargs="?", type=str, default="Standard", help="The base to decompoose into")
+    parser.add_argument("save_file", nargs="?", type=str, help="The file to save the output if provided. Otherwise, the graph is shown")
+    parser.add_argument("--trim-controls", "-t", action="store_true", help="Whether to trim excess controls before decomposing")
     
     args = parser.parse_args()
 
     error = pow(10, -args.num_digits)
-    type_strs = ["Aqft", "CatAqft"]
-    all_data = []
+    type_str = args.type
 
-    for type_str in type_strs:
-        output = run_haskell_program(type_str, args.size, args.base_str, args.num_digits, args.trim_controls)
-        gate_cutting_errors, decomposition_errors, t_gate_counts, cnot_gate_counts, total_gate_counts = parse_output(output)
-        fractional_gate_cutting_errors = [x / error for x in gate_cutting_errors]
-        all_data.append((type_str, fractional_gate_cutting_errors, [
-            (t_gate_counts, 'T Count'),
-            (cnot_gate_counts, 'CNOT Count'),
-            (total_gate_counts, 'Total Count')
-        ]))
+    output = run_haskell_program(type_str, args.size, args.base_str, args.num_digits, args.trim_controls)
+    gate_cutting_errors, decomposition_errors, t_gate_counts, cnot_gate_counts, total_gate_counts = parse_output(output)
+    fractional_gate_cutting_errors = [x / error for x in gate_cutting_errors]
+    data = [
+        (t_gate_counts, 'T Count'),
+        (cnot_gate_counts, 'CNOT Count'),
+        (total_gate_counts, 'Total Count')
+    ]
     
-    fig, axes = plt.subplots(len(all_data[0][-1]), len(all_data), figsize=(12, 8), dpi=100)
-    fig.suptitle(f'{args.size} Qubit AQFT with Error {error} and {args.base_str} Gate Set', fontsize=24)
+    fig, axes = plt.subplots(1, len(data), figsize=(18, 6), dpi=100)
+    fig.suptitle(f'{args.size} Qubit {type_str} with Error {error} and {args.base_str} Gate Set', fontsize=24)
 
-    for col, (type_str, x_data, data) in enumerate(all_data):
-        for row, (y_data, y_label) in enumerate(data):
-            ax = axes[row, col]
-            ax.plot(x_data, y_data)
-            ax.set_title(f"{type_str} - {y_label}", fontsize=14)
-            ax.set_xlabel('Fractional of Error for Gate Cutting', fontsize=12)
-            ax.set_ylabel(y_label, fontsize=12)
+    x_data = fractional_gate_cutting_errors
+    for col, (y_data, y_label) in enumerate(data):
+        ax = axes[col]
+        ax.plot(x_data, y_data)
+        ax.set_title(f"{type_str} - {y_label}", fontsize=14)
+        ax.set_xlabel('Fractional of Error for Gate Cutting', fontsize=12)
+        ax.set_ylabel(y_label, fontsize=12)
 
     plt.tight_layout(pad=2)
-    plt.show()
+    if args.save_file:
+        plt.savefig(args.save_file)
+    else:
+        plt.show()

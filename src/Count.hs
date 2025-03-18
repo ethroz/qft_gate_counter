@@ -99,7 +99,7 @@ main = mainBody =<< execParser opts
 mainBody :: Args -> IO ()
 mainBody (Args typeStr size numDigits baseStr optRemoveControls optExact) = do
   g <- newStdGen
-  let (baseCircFunc, approxGateCountFunc) = circAndApproxGateCountFromString typeStr
+  let baseCircFunc = circFromString typeStr
       trimmedCircFunc =
         if optRemoveControls
           then decompose_generic TrimControls . baseCircFunc
@@ -110,14 +110,14 @@ mainBody (Args typeStr size numDigits baseStr optRemoveControls optExact) = do
           else trimmedCircFunc
       baseFunc = baseFromString baseStr g
       error = 10 ** (- numDigits)
-      circuits_with_errors = createAllAqft circFunc approxGateCountFunc size error
+      circuits_with_errors = createAllAqft circFunc size error
   mapM_ (printCircuit size baseFunc) circuits_with_errors
 
-circAndApproxGateCountFromString :: String -> (Int -> [Qubit] -> Circ [Qubit], Int -> Int -> Int)
-circAndApproxGateCountFromString typeStr =
+circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
+circFromString typeStr approx =
   case typeStr of
-    "Aqft" -> (aqft, aqft_approx_gate_count)
-    "CatAqft" -> (catalytic_aqft, aqft_approx_gate_count)
+    "Aqft" -> aqft approx
+    "CatAqft" -> catalytic_aqft approx
     _ -> error "Unknown Aqft type"
 
 baseFromString :: String -> StdGen -> Precision -> GateBase
@@ -129,13 +129,13 @@ baseFromString baseStr g precision =
     "Approximate" -> Approximate False precision (RandomSource g)
     _ -> error "Unknown base"
 
-createAllAqft :: (Int -> [Qubit] -> Circ [Qubit]) -> (Int -> Int -> Int) -> Int -> Double -> [([Qubit] -> Circ [Qubit], Double, Double, Int, Double, Double)]
-createAllAqft circFunc approxGateCountFunc n error =
+createAllAqft :: (Int -> [Qubit] -> Circ [Qubit]) -> Int -> Double -> [([Qubit] -> Circ [Qubit], Double, Double, Int, Double, Double)]
+createAllAqft circFunc n error =
   [ (circFunc m, error, gateCutErr, approxGateCount, gateErr, decompErr2)
     | m <- [1 .. n],
       let gateCutErr = aqft_error n m
           decompErr = error - gateCutErr
-          approxGateCount = approxGateCountFunc n m
+          approxGateCount = aqft_approx_gate_count n m
           gateErr = decompErr / fromIntegral approxGateCount
           decompErr2 = gateErr * fromIntegral approxGateCount,
       decompErr > 0 && approxGateCount > 0

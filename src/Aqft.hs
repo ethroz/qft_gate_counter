@@ -58,5 +58,5 @@ aqft_controlled_rotation_count n m =
 aqft_approx_gate_count :: Int -> Int -> Int
 aqft_approx_gate_count n m = 
   let total = aqft_controlled_rotation_count n m
-      s_or_larger_gates = aqft_controlled_rotation_count n 2
-  in total - s_or_larger_gates
+      t_or_larger_gates = aqft_controlled_rotation_count n (min m 3)
+  in total - t_or_larger_gates
