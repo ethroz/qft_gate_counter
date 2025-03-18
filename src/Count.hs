@@ -2,8 +2,8 @@
 
 module Main where
 
-import Aqft (aqft, aqft_error, aqft_approx_gate_count)
-import CatalyticAqft (catalytic_aqft, catalytic_aqft_approx_gate_count)
+import Aqft (aqft, aqft_approx_gate_count, aqft_error)
+import CatalyticAqft (catalytic_aqft)
 import Options.Applicative
   ( Parser,
     argument,
@@ -28,7 +28,7 @@ import Quipper.Internal.Printing
     print_generic,
   )
 import Quipper.Libraries.Decompose
-  ( GateBase (TrimControls),
+  ( GateBase (Exact, TrimControls),
     Precision,
   )
 import Quipper.Libraries.Decompose.GateBase
@@ -44,9 +44,10 @@ data Args where
   Args ::
     { typeStr :: String,
       size :: Int,
-      baseStr :: String,
       numDigits :: Double,
-      optRemoveControls :: Bool
+      baseStr :: String,
+      optRemoveControls :: Bool,
+      optExact :: Bool
     } ->
     Args
 
@@ -64,19 +65,24 @@ args =
           <> help "The number of qubits in the aqft"
       )
     <*> argument
-      str
-      ( metavar "GATE_BASE"
-          <> help "The base to decompose into"
-      )
-    <*> argument
       auto
       ( metavar "DIGITS"
           <> help "The number of digits for the minimum accuracy"
+      )
+    <*> argument
+      str
+      ( metavar "GATE_BASE"
+          <> help "The base to decompose into"
       )
     <*> switch
       ( long "trim-controls"
           <> short 't'
           <> help "Whether to trim excess controls before decomposing"
+      )
+    <*> switch
+      ( long "exact"
+          <> short 'e'
+          <> help "Convert exact gates to Clifford+T and leave everything else"
       )
 
 main :: IO ()
@@ -91,13 +97,17 @@ main = mainBody =<< execParser opts
         )
 
 mainBody :: Args -> IO ()
-mainBody (Args typeStr size baseStr numDigits optRemoveControls) = do
+mainBody (Args typeStr size numDigits baseStr optRemoveControls optExact) = do
   g <- newStdGen
   let (baseCircFunc, approxGateCountFunc) = circAndApproxGateCountFromString typeStr
-      circFunc =
+      trimmedCircFunc =
         if optRemoveControls
           then decompose_generic TrimControls . baseCircFunc
           else baseCircFunc
+      circFunc =
+        if optExact
+          then decompose_generic Exact . trimmedCircFunc
+          else trimmedCircFunc
       baseFunc = baseFromString baseStr g
       error = 10 ** (- numDigits)
       circuits_with_errors = createAllAqft circFunc approxGateCountFunc size error
@@ -107,7 +117,7 @@ circAndApproxGateCountFromString :: String -> (Int -> [Qubit] -> Circ [Qubit], I
 circAndApproxGateCountFromString typeStr =
   case typeStr of
     "Aqft" -> (aqft, aqft_approx_gate_count)
-    "CatAqft" -> (catalytic_aqft, \_ m -> catalytic_aqft_approx_gate_count m)
+    "CatAqft" -> (catalytic_aqft, aqft_approx_gate_count)
     _ -> error "Unknown Aqft type"
 
 baseFromString :: String -> StdGen -> Precision -> GateBase
@@ -122,7 +132,7 @@ baseFromString baseStr g precision =
 createAllAqft :: (Int -> [Qubit] -> Circ [Qubit]) -> (Int -> Int -> Int) -> Int -> Double -> [([Qubit] -> Circ [Qubit], Double, Double, Int, Double, Double)]
 createAllAqft circFunc approxGateCountFunc n error =
   [ (circFunc m, error, gateCutErr, approxGateCount, gateErr, decompErr2)
-    | m <- [n, n -1 .. 1],
+    | m <- [1 .. n],
       let gateCutErr = aqft_error n m
           decompErr = error - gateCutErr
           approxGateCount = approxGateCountFunc n m
@@ -134,10 +144,11 @@ createAllAqft circFunc approxGateCountFunc n error =
 printCircuit :: Int -> (Precision -> GateBase) -> ([Qubit] -> Circ [Qubit], Double, Double, Int, Double, Double) -> IO ()
 printCircuit size baseFunc (circ, totalErr, gateCutErr, approxGateCount, gateErr, decompErr) = do
   printf "\nTotal error:                  %f\n" totalErr
-  printf   "Gate cutting error:           %f\n" gateCutErr
-  printf   "Number of approximate gates:  %d\n" approxGateCount
-  printf   "Decomposition error per gate: %f\n" gateErr
-  printf   "Decomposition error:          %f\n" decompErr
+  printf "Gate cutting error:           %f\n" gateCutErr
+  printf "Gate cutting ratio:           %f\n" (gateCutErr / totalErr)
+  printf "Number of approximate gates:  %d\n" approxGateCount
+  printf "Decomposition error per gate: %f\n" gateErr
+  printf "Decomposition error:          %f\n" decompErr
   let precisionPerGate = (- log gateErr) * digits
       decompCirc = decompose_generic (baseFunc precisionPerGate) circ
   putStrLn "Circuit:"

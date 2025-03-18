@@ -4,7 +4,7 @@
 module Tools (map_phase_little_endian, q_quadratic_sub_in_place, q_linear_sub_in_place, q_fast_sub_in_place) where
 
 import Control.Monad (unless)
-import Quipper (Circ, Qubit, controlled, gate_S, gate_T, gate_T_inv, gate_Z, gate_iX, gate_iX_inv, hadamard, qc_measure, qnot, rGate, with_ancilla, (.==.))
+import Quipper (Circ, Qubit, controlled, gate_S, gate_T, gate_T_inv, gate_Z, gate_iX_inv, gate_iX, hadamard, qc_measure, qnot, rGate, with_ancilla, (.==.))
 import Quipper.Libraries.Arith (QDInt, list_of_xint_lh, xint_of_list_lh)
 
 map_phase_little_endian :: [Qubit] -> Circ [Qubit]
@@ -68,9 +68,9 @@ q_linear_sub_in_place_qulist xs ys = do
     ripple_sub [a] [b] = return ([a], [b])
     ripple_sub (a : as) (b : bs) = do
       with_ancilla $ \c -> do
-        c <- gate_iX_inv c `controlled` a `controlled` b
+        c <- gate_iX c `controlled` a `controlled` b
         (as, bs) <- ripple_sub_carry c as bs
-        _ <- gate_iX c `controlled` a `controlled` b
+        _ <- gate_iX_inv c `controlled` a `controlled` b
         return (a : as, b : bs)
     ripple_sub_carry :: Qubit -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
     ripple_sub_carry _ [] [] = return ([], [])
@@ -82,16 +82,16 @@ q_linear_sub_in_place_qulist xs ys = do
       b <- qnot b `controlled` c
       return ([a], [b])
     ripple_sub_carry c1 (a : as) (b : bs) = do
-      a <- qnot a `controlled` c1
+      a <- gate_iX a `controlled` c1
       (a : as, b : bs) <- with_ancilla $ \c2 -> do
-        c2 <- gate_iX_inv c2 `controlled` a `controlled` b
-        c2 <- qnot c2 `controlled` c1
+        c2 <- gate_iX c2 `controlled` a `controlled` b
+        c2 <- gate_iX c2 `controlled` c1
         (as, bs) <- ripple_sub_carry c2 as bs
-        c2 <- qnot c2 `controlled` c1
-        _ <- gate_iX c2 `controlled` a `controlled` b
+        c2 <- gate_iX_inv c2 `controlled` c1
+        _ <- gate_iX_inv c2 `controlled` a `controlled` b
         return (a : as, b : bs)
+      a <- gate_iX_inv a `controlled` c1
       b <- qnot b `controlled` c1
-      a <- qnot a `controlled` c1
       return (a : as, b : bs)
 
 q_fast_sub_in_place :: QDInt -> QDInt -> Circ (QDInt, QDInt)

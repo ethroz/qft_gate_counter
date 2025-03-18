@@ -22,13 +22,11 @@ import Options.Applicative
     switch,
     (<**>),
   )
-import Quipper (Circ, Format (Preview), Qubit, qubit)
+import Quipper (Circ, Format (GateCount, Preview), Qubit, qubit)
 import Quipper.Internal.Printing
   ( print_generic,
   )
-import Quipper.Libraries.Decompose
-  ( GateBase (TrimControls),
-  )
+import Quipper.Libraries.Decompose (GateBase (Exact, TrimControls))
 import Quipper.Libraries.Decompose.GateBase
   ( decompose_generic,
   )
@@ -38,7 +36,9 @@ data Args where
     { typeStr :: String,
       size :: Int,
       approx :: Int,
-      optRemoveControls :: Bool
+      optRemoveControls :: Bool,
+      optExact :: Bool,
+      optCount :: Bool
     } ->
     Args
 
@@ -65,6 +65,16 @@ args =
           <> short 't'
           <> help "Whether to trim excess controls before decomposing"
       )
+    <*> switch
+      ( long "exact"
+          <> short 'e'
+          <> help "Convert exact gates to Clifford+T and leave everything else"
+      )
+    <*> switch
+      ( long "count"
+          <> short 'c'
+          <> help "Show a gate count alongside the circuit preview"
+      )
 
 main :: IO ()
 main = mainBody =<< execParser opts
@@ -78,13 +88,18 @@ main = mainBody =<< execParser opts
         )
 
 mainBody :: Args -> IO ()
-mainBody (Args typeStr size approx optRemoveControls) = do
+mainBody (Args typeStr size approx optRemoveControls optExact optCount) = do
   let baseCirc = circFromString typeStr approx
-      circ =
+      trimmedCirc =
         if optRemoveControls
           then decompose_generic TrimControls baseCirc
           else baseCirc
-  printCircuit size circ
+      circ =
+        if optExact
+          then decompose_generic Exact trimmedCirc
+          else trimmedCirc
+  let action = if optCount then GateCount else Preview
+  print_generic action circ (replicate size qubit)
 
 circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
 circFromString typeStr approx =
@@ -92,7 +107,3 @@ circFromString typeStr approx =
     "Aqft" -> aqft approx
     "CatAqft" -> catalytic_aqft approx
     _ -> error "Unknown Aqft type"
-
-printCircuit :: Int -> ([Qubit] -> Circ [Qubit]) -> IO ()
-printCircuit size circ = do
-  print_generic Preview circ (replicate size qubit)

@@ -9,8 +9,8 @@ def run_haskell_program(type_str, size, base_str, num_digits, trim_controls=Fals
         "cabal", "run", "count", "-O2", "--",
         type_str,
         str(size),
+        str(num_digits),
         base_str,
-        str(num_digits)
     ]
     if trim_controls:
         cmd.append("--trim-controls")
@@ -44,8 +44,8 @@ def parse_output(output):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
     parser.add_argument("size", metavar="SIZE", type=int, help="The number of qubits in the aqft")
-    parser.add_argument("base_str", metavar="GATE_BASE", type=str, help="The base to decompositionose into")
     parser.add_argument("num_digits", metavar="DIGITS", type=float, help="The number of digits for the minimum accuracy")
+    parser.add_argument("base_str", metavar="GATE_BASE", type=str, help="The base to decompositionose into")
     parser.add_argument("--trim-controls", "-t", action="store_true", help="Whether to trim excess controls before decompositionosing")
     
     args = parser.parse_args()
@@ -65,14 +65,14 @@ if __name__ == "__main__":
         ]))
     
     fig, axes = plt.subplots(len(all_data[0][-1]), len(all_data), figsize=(12, 8), dpi=100)
-    fig.suptitle(f'{args.size} Qubit AQFT with error {error} and {args.base_str} gate set', fontsize=24)
+    fig.suptitle(f'{args.size} Qubit AQFT with Error {error} and {args.base_str} Gate Set', fontsize=24)
 
     for col, (type_str, x_data, data) in enumerate(all_data):
         for row, (y_data, y_label) in enumerate(data):
             ax = axes[row, col]
             ax.plot(x_data, y_data)
             ax.set_title(f"{type_str} - {y_label}", fontsize=14)
-            ax.set_xlabel('Fractional Gate Cutting Error', fontsize=12)
+            ax.set_xlabel('Fractional of Error for Gate Cutting', fontsize=12)
             ax.set_ylabel(y_label, fontsize=12)
 
     plt.tight_layout(pad=2)
