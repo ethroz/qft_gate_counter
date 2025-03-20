@@ -21,7 +21,8 @@ import Quipper.Internal.Printing
   ( print_generic,
   )
 import Quipper.Libraries.Arith (qdint_of_qulist_lh, qulist_of_qdint_lh)
-import Tools (q_linear_sub_in_place)
+import Tools (q_linear_sub_in_place, q_quadratic_sub_in_place, q_fast_sub_in_place)
+import Quipper.Internal.Monad (controlled)
 
 data Args where
   Args :: {size :: Int} -> Args
@@ -52,16 +53,17 @@ mainBody (Args size) = do
 
 printCircuit :: Int -> ([Qubit] -> Circ [Qubit]) -> IO ()
 printCircuit size circ = do
-  print_generic Preview circ (replicate size qubit)
+  print_generic Preview circ (replicate (size + 1) qubit)
 
 circ :: [Qubit] -> Circ [Qubit]
-circ qs = do
+circ [] = return []
+circ (q : qs) = do
   let len = length qs
       half = len `div` 2
       (as, bs) = splitAt half qs
       aInt = qdint_of_qulist_lh as
       bInt = qdint_of_qulist_lh bs
-  (aInt, bInt) <- q_linear_sub_in_place aInt bInt
+  (aInt, bInt) <- q_linear_sub_in_place aInt bInt q
   let as = qulist_of_qdint_lh aInt
       bs = qulist_of_qdint_lh bInt
       qs = as ++ bs

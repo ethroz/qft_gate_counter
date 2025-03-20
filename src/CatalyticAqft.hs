@@ -16,24 +16,25 @@ import Quipper.Internal.Labels (comment_with_label)
 import Quipper.Libraries.Arith (qdint_of_qulist_bh, qdint_of_qulist_lh, qulist_of_qdint_bh, qulist_of_qdint_lh)
 import Tools (map_phase_little_endian, q_linear_sub_in_place)
 import Control.Monad (when)
+import Quipper.Internal.Control (ControlSource)
 
 catalytic_aqft_impl :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
 catalytic_aqft_impl _ [] as = return ([], as)
 catalytic_aqft_impl approx (x : xs) as = do
   (xs, as) <- catalytic_aqft_impl approx xs as
-  (xs, as) <- subtract approx xs as `controlled` x
+  (xs, as) <- subtract approx xs as x
   x <- hadamard x
   return (x : xs, as)
   where
-    subtract :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
-    subtract _ [] _ = return ([], as)
-    subtract approx qs as = do
+    subtract :: (ControlSource c) => Int -> [Qubit] -> [Qubit] -> c -> Circ ([Qubit], [Qubit])
+    subtract _ [] _ _ = return ([], as)
+    subtract approx qs as c = do
       let (qubits, other_qubits) = splitAt (approx - 1) qs
           num_ancillas = length qs + 1
           (other_ancillas, ancillas) = splitAt (length as - num_ancillas) as
           x = qdint_of_qulist_bh qubits
           y = qdint_of_qulist_lh ancillas
-      (x, y) <- q_linear_sub_in_place x y
+      (x, y) <- q_linear_sub_in_place x y c
       let qs = qulist_of_qdint_bh x ++ other_qubits
           as = other_ancillas ++ qulist_of_qdint_lh y
       return (qs, as)

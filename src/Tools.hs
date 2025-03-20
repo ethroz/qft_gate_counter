@@ -4,7 +4,7 @@
 module Tools (map_phase_little_endian, q_quadratic_sub_in_place, q_linear_sub_in_place, q_fast_sub_in_place) where
 
 import Control.Monad (unless)
-import Quipper (Circ, Qubit, controlled, gate_S, gate_T, gate_T_inv, gate_Z, gate_iX_inv, gate_iX, hadamard, qc_measure, qnot, rGate, with_ancilla, (.==.))
+import Quipper (Circ, Qubit, controlled, gate_S, gate_T, gate_T_inv, gate_Z, gate_iX_inv, gate_iX, hadamard, qc_measure, qnot, rGate, with_ancilla, (.==.), ControlSource)
 import Quipper.Libraries.Arith (QDInt, list_of_xint_lh, xint_of_list_lh)
 
 map_phase_little_endian :: [Qubit] -> Circ [Qubit]
@@ -41,23 +41,23 @@ q_decrement qs = do
   q' <- qnot q `controlled` qs'
   return (qs' ++ [q'])
 
-q_linear_sub_in_place :: QDInt -> QDInt -> Circ (QDInt, QDInt)
-q_linear_sub_in_place x y = do
+q_linear_sub_in_place :: (ControlSource c) => QDInt -> QDInt -> c -> Circ (QDInt, QDInt)
+q_linear_sub_in_place x y c = do
   let x' = list_of_xint_lh x
       y' = list_of_xint_lh y
-  (x', y') <- q_linear_sub_in_place_qulist x' y'
+  (x', y') <- q_linear_sub_in_place_qulist x' y' c
   let x = xint_of_list_lh x'
       y = xint_of_list_lh y'
   return (x, y)
 
 -- Little Endian Subtraction
-q_linear_sub_in_place_qulist :: [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
-q_linear_sub_in_place_qulist xs ys = do
+q_linear_sub_in_place_qulist :: (ControlSource c) => [Qubit] -> [Qubit] -> c -> Circ ([Qubit], [Qubit])
+q_linear_sub_in_place_qulist xs ys e = do
   let nx = length xs
       ny = length ys
   unless (nx == ny || nx + 1 == ny) $
     error "Can only subtract integers of the same size or one less than the result"
-  sequence_ [qnot y `controlled` x | (x, y) <- zip xs ys]
+  sequence_ [qnot y `controlled` (x, e) | (x, y) <- zip xs ys]
   (xs, ys) <- ripple_sub xs ys
   return (xs, ys)
   where
@@ -68,9 +68,9 @@ q_linear_sub_in_place_qulist xs ys = do
     ripple_sub [a] [b] = return ([a], [b])
     ripple_sub (a : as) (b : bs) = do
       with_ancilla $ \c -> do
-        c <- gate_iX c `controlled` a `controlled` b
+        c <- gate_iX c `controlled` a `controlled` b `controlled` e
         (as, bs) <- ripple_sub_carry c as bs
-        _ <- gate_iX_inv c `controlled` a `controlled` b
+        _ <- gate_iX_inv c `controlled` a `controlled` b `controlled`e
         return (a : as, b : bs)
     ripple_sub_carry :: Qubit -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
     ripple_sub_carry _ [] [] = return ([], [])
@@ -84,11 +84,11 @@ q_linear_sub_in_place_qulist xs ys = do
     ripple_sub_carry c1 (a : as) (b : bs) = do
       a <- gate_iX a `controlled` c1
       (a : as, b : bs) <- with_ancilla $ \c2 -> do
-        c2 <- gate_iX c2 `controlled` a `controlled` b
+        c2 <- gate_iX c2 `controlled` a `controlled` b `controlled` e
         c2 <- gate_iX c2 `controlled` c1
         (as, bs) <- ripple_sub_carry c2 as bs
         c2 <- gate_iX_inv c2 `controlled` c1
-        _ <- gate_iX_inv c2 `controlled` a `controlled` b
+        _ <- gate_iX_inv c2 `controlled` a `controlled` b `controlled` e
         return (a : as, b : bs)
       a <- gate_iX_inv a `controlled` c1
       b <- qnot b `controlled` c1
