@@ -43,7 +43,7 @@ def parse_output(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
-    parser.add_argument("type", metavar="TYPE", type=str, choices=["Aqft", "CatAqft"], help="The type of AQFT to use")
+    parser.add_argument("type", metavar="TYPE", type=str, help="The type of AQFT to use")
     parser.add_argument("size", metavar="SIZE", type=int, help="The number of qubits in the aqft")
     parser.add_argument("num_digits", metavar="DIGITS", type=float, help="The number of digits for the minimum accuracy")
     parser.add_argument("base_str", metavar="GATE_BASE", nargs="?", type=str, default="Standard", help="The base to decompoose into")

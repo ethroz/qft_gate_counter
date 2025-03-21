@@ -7,34 +7,33 @@ import Quipper
   ( Circ,
     Qubit,
     comment,
-    controlled,
     hadamard,
     map_hadamard,
   )
 import Quipper.Internal.Generic (with_ancilla_list)
 import Quipper.Internal.Labels (comment_with_label)
 import Quipper.Libraries.Arith (qdint_of_qulist_bh, qdint_of_qulist_lh, qulist_of_qdint_bh, qulist_of_qdint_lh)
-import Tools (map_phase_little_endian, q_linear_sub_in_place)
+import Arithmetic (q_controlled_linear_sub_in_place)
 import Control.Monad (when)
-import Quipper.Internal.Control (ControlSource)
+import Phases (map_phase_little_endian)
 
 catalytic_aqft_impl :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
 catalytic_aqft_impl _ [] as = return ([], as)
 catalytic_aqft_impl approx (x : xs) as = do
   (xs, as) <- catalytic_aqft_impl approx xs as
-  (xs, as) <- subtract approx xs as x
+  (xs, as) <- controlled_subtract approx xs as x
   x <- hadamard x
   return (x : xs, as)
   where
-    subtract :: (ControlSource c) => Int -> [Qubit] -> [Qubit] -> c -> Circ ([Qubit], [Qubit])
-    subtract _ [] _ _ = return ([], as)
-    subtract approx qs as c = do
+    controlled_subtract :: Int -> [Qubit] -> [Qubit] -> Qubit -> Circ ([Qubit], [Qubit])
+    controlled_subtract _ [] _ _ = return ([], as)
+    controlled_subtract approx qs as c = do
       let (qubits, other_qubits) = splitAt (approx - 1) qs
           num_ancillas = length qs + 1
           (other_ancillas, ancillas) = splitAt (length as - num_ancillas) as
           x = qdint_of_qulist_bh qubits
           y = qdint_of_qulist_lh ancillas
-      (x, y) <- q_linear_sub_in_place x y c
+      (x, y) <- q_controlled_linear_sub_in_place x y (Just c)
       let qs = qulist_of_qdint_bh x ++ other_qubits
           as = other_ancillas ++ qulist_of_qdint_lh y
       return (qs, as)

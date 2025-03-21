@@ -62,7 +62,7 @@ executable count
     main-is:          Count.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Aqft, CatalyticAqft, Tools
+    other-modules:    Aqft, CatalyticAqft, Arithmetic, Phases, Ancillas
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -90,7 +90,7 @@ executable view
     main-is:          View.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Aqft, CatalyticAqft, Tools
+    other-modules:    Aqft, CatalyticAqft, Arithmetic, Phases, Ancillas
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -118,7 +118,7 @@ executable test
     main-is:          Test.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    Aqft, CatalyticAqft, Tools
+    other-modules:    Aqft, CatalyticAqft, Arithmetic, Phases, Ancillas
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
