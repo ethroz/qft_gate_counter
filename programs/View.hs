@@ -126,7 +126,7 @@ mainBody (Args typeStr size approx baseStr numDigits optRemoveControls optExact 
       decompErr = error - gateCutErr
       approxGateCount = aqft_approx_gate_count size approx
       gateErr = decompErr / fromIntegral approxGateCount
-      precisionPerGate = (- log gateErr) * digits
+      precisionPerGate = (- logBase 10 gateErr) * digits
       base = baseFromString baseStr g precisionPerGate
       circ = decompose_generic base exactCirc
   let action = if optCount then GateCount else Preview
@@ -141,7 +141,6 @@ circFromString typeStr approx =
 
 baseFromString :: String -> StdGen -> Precision -> GateBase
 baseFromString baseStr g precision = do
-  let _ = print precision
   case baseStr of
     "CliffordT" -> CliffordT True precision (RandomSource g)
     "Standard" -> Standard precision (RandomSource g)

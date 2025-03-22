@@ -3,16 +3,18 @@
 {-# HLINT ignore "Use camelCase" #-}
 module Aqft (aqft, aqft_error, aqft_approx_gate_count) where
 
+import Control.Monad (when)
 import Quipper
   ( Circ,
     Qubit,
     comment,
     controlled,
+    gate_S,
     hadamard,
     rGate,
   )
 import Quipper.Internal.Labels (comment_with_label)
-import Control.Monad (when)
+import Quipper.Internal.Monad (gate_T)
 
 aqft_impl :: Int -> [Qubit] -> Circ [Qubit]
 aqft_impl _ [] = return []
@@ -28,7 +30,11 @@ aqft_impl approx (x : xs) = do
       let l = n - length qs
       if l < approx
         then do
-          q <- rGate (l + 1) q `controlled` c
+          let exp = l + 1
+          q <- case exp of
+            2 -> gate_S q `controlled` c
+            3 -> gate_T q `controlled` c
+            _ -> rGate (l + 1) q `controlled` c
           qs <- rotations n approx c qs
           return (q : qs)
         else return (q : qs)
@@ -53,10 +59,10 @@ aqft_error n m =
 aqft_controlled_rotation_count :: Int -> Int -> Int
 aqft_controlled_rotation_count n m =
   let m' = m - 1
-  in n * m' - (m * m') `div` 2 -- This should always be an integer
+   in n * m' - (m * m') `div` 2 -- This should always be an integer
 
 aqft_approx_gate_count :: Int -> Int -> Int
-aqft_approx_gate_count n m = 
+aqft_approx_gate_count n m =
   let total = aqft_controlled_rotation_count n m
       t_or_larger_gates = aqft_controlled_rotation_count n (min m 3)
-  in total - t_or_larger_gates
+   in total - t_or_larger_gates

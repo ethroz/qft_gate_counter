@@ -1,11 +1,13 @@
+from typing import Tuple
 import argparse
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 import re
 import subprocess
 
-def run_haskell_program(type_str, size, base_str, num_digits, trim_controls=False):
-    cmd = [
+def run_haskell_program(type_str, size, num_digits, base_str="Standard", trim_controls=False):
+    args = [
         "cabal", "run", "count", "-O2", "--",
         type_str,
         str(size),
@@ -13,70 +15,106 @@ def run_haskell_program(type_str, size, base_str, num_digits, trim_controls=Fals
         base_str,
     ]
     if trim_controls:
-        cmd.append("--trim-controls")
+        args.append("--trim-controls")
 
     this_dir = os.path.dirname(__file__)
-    result = subprocess.run(cmd, cwd=this_dir, capture_output=True, text=True)
+    result = subprocess.run(args, cwd=this_dir, capture_output=True, text=True)
     if result.returncode != 0:
         print(result.stderr)
         exit(result.returncode)
     return result.stdout
 
-gate_cutting_error_pattern = re.compile(r'Gate cutting error:\s+([\d.]+)')
-decomposition_error_pattern = re.compile(r'Decomposition Error:\s+([\d.]+)')
+m_pattern = re.compile(r'm:\s+(\d+)')
 t_star_gate_pattern = re.compile(r'(\d+): "T\*, arity 1"')
 t_gate_pattern = re.compile(r'(\d+): "T, arity 1"')
-cnot_gate_pattern = re.compile(r'(\d+): "not, arity 1", controls 1')
-total_gates_pattern = re.compile(r'Total gates: (\d+)')
 
 def parse_output(output):
-    gate_cutting_errors = [float(match.group(1)) for match in gate_cutting_error_pattern.finditer(output)]
-    decomposition_errors = [float(match.group(1)) for match in decomposition_error_pattern.finditer(output)]
+    ms = [int(match.group(1)) for match in m_pattern.finditer(output)]
     t_star_gate_counts = [int(match.group(1)) for match in t_star_gate_pattern.finditer(output)]
     t_gate_counts = [int(match.group(1)) for match in t_gate_pattern.finditer(output)]
-    cnot_gate_counts = [int(match.group(1)) for match in cnot_gate_pattern.finditer(output)]
-    total_gate_counts = [int(match.group(1)) for match in total_gates_pattern.finditer(output)]
 
     total_t_gate_counts = [x + y for x, y in zip(t_star_gate_counts, t_gate_counts)]
     
-    return gate_cutting_errors, decomposition_errors, total_t_gate_counts, cnot_gate_counts, total_gate_counts    
+    return ms, total_t_gate_counts
 
-if __name__ == "__main__":
+def get_min_t_count(aqft_type: str, n: int, num_digits: int) -> Tuple[int, int]:
+    output = run_haskell_program(aqft_type, n, num_digits)
+    if not output:
+        return 0, None
+    ms, t_counts = parse_output(output)
+
+    min_t_count = min(t_counts)
+    min_index = t_counts.index(min_t_count)
+    best_m = ms[min_index]
+    
+    return min_t_count, best_m
+
+def main():
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
     parser.add_argument("type", metavar="TYPE", type=str, help="The type of AQFT to use")
-    parser.add_argument("size", metavar="SIZE", type=int, help="The number of qubits in the aqft")
-    parser.add_argument("num_digits", metavar="DIGITS", type=float, help="The number of digits for the minimum accuracy")
-    parser.add_argument("base_str", metavar="GATE_BASE", nargs="?", type=str, default="Standard", help="The base to decompoose into")
+    parser.add_argument("max_size", metavar="MAX_SIZE", type=int, help="The maximum number of qubits in the aqft")
+    parser.add_argument("max_digits", metavar="MAX_DIGITS", type=int, help="The maximum number of digits for the minimum accuracy")
     parser.add_argument("save_file", nargs="?", type=str, help="The file to save the output if provided. Otherwise, the graph is shown")
-    parser.add_argument("--trim-controls", "-t", action="store_true", help="Whether to trim excess controls before decomposing")
+    parser.add_argument("--single", "-s", action="store_true", help="If present, will find the gate count for only the specified arguments")
     
     args = parser.parse_args()
 
-    error = pow(10, -args.num_digits)
-    type_str = args.type
+    aqft_type = args.type
+    max_size = args.max_size
+    max_digits = args.max_digits
+        
+    if args.single:
+        t_count, m = get_min_t_count(aqft_type, max_size, max_digits)
+        print(f"T count: {t_count}")
+        print(f"Approx:  {m}")
+        return
 
-    output = run_haskell_program(type_str, args.size, args.base_str, args.num_digits, args.trim_controls)
-    gate_cutting_errors, decomposition_errors, t_gate_counts, cnot_gate_counts, total_gate_counts = parse_output(output)
-    fractional_gate_cutting_errors = [x / error for x in gate_cutting_errors]
-    data = [
-        (t_gate_counts, 'T Count'),
-        (cnot_gate_counts, 'CNOT Count'),
-        (total_gate_counts, 'Total Count')
-    ]
+    sizes = range(2, max_size + 1)
+    digits = range(1, max_digits + 1)
+
+    min_t_counts = np.zeros((len(sizes), len(digits)))
     
-    fig, axes = plt.subplots(1, len(data), figsize=(18, 6), dpi=100)
-    fig.suptitle(f'{args.size} Qubit {type_str} with Error {error} and {args.base_str} Gate Set', fontsize=24)
+    max_t_count = 0
+    max_t_count_size = 0
+    max_t_count_approx = 0
+    max_t_count_digits = 0
 
-    x_data = fractional_gate_cutting_errors
-    for col, (y_data, y_label) in enumerate(data):
-        ax = axes[col]
-        ax.plot(x_data, y_data)
-        ax.set_title(f"{type_str} - {y_label}", fontsize=14)
-        ax.set_xlabel('Fractional of Error for Gate Cutting', fontsize=12)
-        ax.set_ylabel(y_label, fontsize=12)
+    length = len(sizes)
+    for i, n in enumerate(sizes):
+        for j, num_digits in enumerate(digits):
+            t_count, m = get_min_t_count(aqft_type, n, num_digits)
+            min_t_counts[i, j] = t_count
 
-    plt.tight_layout(pad=2)
+            # Track the largest T count
+            if t_count > max_t_count:
+                max_t_count = t_count
+                max_t_count_size = n
+                max_t_count_approx = m
+                max_t_count_digits = num_digits
+
+        progress = i / length * 100
+        print(f"Progress: {progress:.2f}%", end="\r", flush=True)
+
+    print(f"Largest T count:      {max_t_count}")
+    print(f"Corresponding size:   {max_t_count_size}")
+    print(f"Corresponding approx: {max_t_count_approx}")
+    print(f"Corresponding digits: {max_t_count_digits}")
+
+    X, Y = np.meshgrid(digits, sizes)
+    Z = min_t_counts
+
+    fig = plt.figure(figsize=(12, 8), dpi=100)
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_surface(X, Y, Z, cmap='viridis')
+
+    ax.set_xlabel('Digits of Accuracy')
+    ax.set_ylabel('Number of Qubits')
+    ax.set_zlabel('Minimum T-count')
+
     if args.save_file:
         plt.savefig(args.save_file)
     else:
         plt.show()
+
+if __name__ == "__main__":
+    main()

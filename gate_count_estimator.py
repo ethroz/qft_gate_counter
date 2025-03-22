@@ -3,6 +3,7 @@ import argparse
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import subprocess
 
 def aqft_error(n, m):
     return sum(2 * math.sin(math.pi * 2 ** (-j)) * (n - j + 1) for j in range(m + 1, n + 1))
@@ -11,12 +12,16 @@ def aqft_controlled_rotation_count(n, m):
     m_prime = m - 1
     return n * m_prime - (m * m_prime) // 2
 
+def aqft_rotation_layer_count(n, m):
+    # return aqft_controlled_rotation_count(n, m) - aqft_controlled_rotation_count(n, m - 1)
+    return n - m + 1
+
 def aqft_approx_gate_count(n, m):
     total = aqft_controlled_rotation_count(n, m)
     s_or_larger_gates = aqft_controlled_rotation_count(n, min(m, 3))
     return total - s_or_larger_gates
 
-def valid_approximations(n: int, error: float)->Tuple[int]:
+def valid_approximations(n: int, error: float) -> Tuple[List[int], List[int]]:
     ms: List[int] = []
     ratios: List[float] = []
     for m in range(1, n + 1):
@@ -29,14 +34,21 @@ def valid_approximations(n: int, error: float)->Tuple[int]:
             ratios.append(ratio)
     return ms, ratios
 
-def z_synthesis_t_count(epsilon_per_gate: float)->int:
+def z_synthesis_t_count(rotation_exp: int, epsilon_per_gate: float)->int:
     if epsilon_per_gate == 1 or epsilon_per_gate == 0:
         raise ValueError("This should never happen")
-    t_count_double_ix = 8
-    log_inverse_epsilon = math.log2(1 / epsilon_per_gate)
-    scale_factor = 1
-    bias = 0
-    return math.ceil(t_count_double_ix + 3 * log_inverse_epsilon + scale_factor * math.log2(log_inverse_epsilon)) + bias
+    
+    frac = pow(2, rotation_exp - 1)
+    digits = -math.log10(epsilon_per_gate)
+    
+    cmd = f'gridsynth --digits={digits} pi/{frac}'
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise ValueError(f'gridsynth command: "{cmd}"\ncommand failed with error: {result.stderr.strip()}')
+    gates_str = result.stdout.strip()
+    
+    t_count = gates_str.count("T")
+    return t_count
 
 def aqft_t_counts(n: int, epsilon: float, ms: List[int], ratios: List[float])->List[int]:
     t_counts: List[int] = []
@@ -46,20 +58,26 @@ def aqft_t_counts(n: int, epsilon: float, ms: List[int], ratios: List[float])->L
         approx_gate_count = aqft_approx_gate_count(n, m)
         epsilon_per_gate = decomposition_epsilon / approx_gate_count
 
-        t_count_per_rotation = z_synthesis_t_count(epsilon_per_gate)
-
-        total_t_count = approx_gate_count * t_count_per_rotation
+        total_t_count = 0
+        for k in range(2, m + 1):
+            ancilla_t_count = 8
+            if k == 2:
+                rotation_t_count = 3
+            elif k == 3:
+                rotation_t_count = 1 + ancilla_t_count
+            else:
+                rotation_t_count = z_synthesis_t_count(k, epsilon_per_gate) + ancilla_t_count
+            rotations = aqft_rotation_layer_count(n, k)
+            total_t_count += rotation_t_count * rotations
 
         t_counts.append(total_t_count)
     return t_counts
 
 def total_subtraction_t_count(n: int, m: int)->int:
     def subtraction_t_count(j: int)->int:
-        num_xi_gates = 10 * j - 4
-        num_toff_gates = 2 * j
+        num_xi_gates = 4 * j
         xi_t_gates = 4
-        toff_t_gates = 7
-        return xi_t_gates * num_xi_gates + toff_t_gates * num_toff_gates
+        return xi_t_gates * num_xi_gates
     sum = 0
     for j in range(1, m):
         sum += subtraction_t_count(j)
@@ -74,11 +92,12 @@ def cataqft_t_counts(n: int, epsilon: float, ms: List[int], ratios: List[float])
         decomposition_epsilon = epsilon - gate_cut_epsilon
         approx_gate_count = aqft_approx_gate_count(n, m)
         epsilon_per_gate = decomposition_epsilon / approx_gate_count
+        
+        synthesis_t_count = 0
+        for k in range(4, m + 1):
+            rotation_t_count = z_synthesis_t_count(k, epsilon_per_gate)
+            synthesis_t_count += rotation_t_count
 
-        num_rotations = m if m > 1 else 0
-        t_count_per_rotation = z_synthesis_t_count(epsilon_per_gate)
-
-        synthesis_t_count = num_rotations * t_count_per_rotation
         subtraction_t_count = total_subtraction_t_count(n, m)
 
         total_t_count = synthesis_t_count + subtraction_t_count
@@ -86,60 +105,70 @@ def cataqft_t_counts(n: int, epsilon: float, ms: List[int], ratios: List[float])
         t_counts.append(total_t_count)
     return t_counts
 
+def get_min_t_count(aqft_type: str, n: int, num_digits: int) -> Tuple[int, int]:
+    epsilon = pow(10, -num_digits)
+    ms, ratios = valid_approximations(n, epsilon)
+    if not ms:
+        return 0, None
+
+    if aqft_type == "Aqft":
+        t_counts = aqft_t_counts(n, epsilon, ms, ratios)
+    elif aqft_type == "CatAqft":
+        t_counts = cataqft_t_counts(n, epsilon, ms, ratios)
+    else:
+        raise ValueError("Invalid AQFT type")
+    
+    min_t_count = min(t_counts)
+    min_index = t_counts.index(min_t_count)
+    best_m = ms[min_index]
+    
+    return min_t_count, best_m
+
 def main():
     parser = argparse.ArgumentParser(description="Estimate the gate counts for the AQFT")
     parser.add_argument("type", metavar="TYPE", type=str, choices=["Aqft", "CatAqft"], help="The type of AQFT to use")
     parser.add_argument("max_size", metavar="MAX_SIZE", type=int, help="The maximum number of qubits in the aqft")
-    parser.add_argument("max_digits", metavar="MAX_DIGITS", type=float, help="The maximum number of digits for the minimum accuracy")
+    parser.add_argument("max_digits", metavar="MAX_DIGITS", type=int, help="The maximum number of digits for the minimum accuracy")
     parser.add_argument("save_file", nargs="?", type=str, help="The file to save the output if provided. Otherwise, the graph is shown")
+    parser.add_argument("--single", "-s", action="store_true", help="If present, will find the gate count for only the specified arguments")
     
     args = parser.parse_args()
 
     aqft_type = args.type
     max_size = args.max_size
     max_digits = args.max_digits
+        
+    if args.single:
+        t_count, m = get_min_t_count(aqft_type, max_size, max_digits)
+        print(f"T count: {t_count}")
+        print(f"Approx:  {m}")
+        return
 
     sizes = range(2, max_size + 1)
-    digits = np.linspace(0.01, max_digits, num=100)
+    digits = range(1, max_digits + 1)
 
     min_t_counts = np.zeros((len(sizes), len(digits)))
-    best_ms = np.zeros((len(sizes), len(digits)))
-    best_ratios = np.zeros((len(sizes), len(digits)))
 
     max_t_count = 0
     max_t_count_size = 0
     max_t_count_approx = 0
     max_t_count_digits = 0
 
+    length = len(sizes)
     for i, n in enumerate(sizes):
         for j, num_digits in enumerate(digits):
-            epsilon = pow(10, -num_digits)
-            ms, ratios = valid_approximations(n, epsilon)
-            if not ms:
-                continue
-
-            if aqft_type == "Aqft":
-                t_counts = aqft_t_counts(n, epsilon, ms, ratios)
-            elif aqft_type == "CatAqft":
-                t_counts = cataqft_t_counts(n, epsilon, ms, ratios)
-            else:
-                raise ValueError("Invalid AQFT type")
-
-            min_t_count = min(t_counts)
-            min_index = t_counts.index(min_t_count)
-            best_m = ms[min_index]
-            best_ratio = ratios[min_index]
-
-            min_t_counts[i, j] = min_t_count
-            best_ms[i, j] = best_m
-            best_ratios[i, j] = best_ratio
+            t_count, m = get_min_t_count(aqft_type, n, num_digits)
+            min_t_counts[i, j] = t_count
 
             # Track the largest T count
-            if min_t_count > max_t_count:
-                max_t_count = min_t_count
+            if t_count > max_t_count:
+                max_t_count = t_count
                 max_t_count_size = n
-                max_t_count_approx = best_m
+                max_t_count_approx = m
                 max_t_count_digits = num_digits
+
+        progress = i / length * 100
+        print(f"Progress: {progress:.2f}%", end="\r", flush=True)
 
     print(f"Largest T count:      {max_t_count}")
     print(f"Corresponding size:   {max_t_count_size}")
