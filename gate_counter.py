@@ -7,6 +7,42 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
+class Cache:
+    def __init__(self, cache_file: str):
+        self.cache_file = cache_file
+        self.cache = self._load_cache()
+        self.csvfile = open(self.cache_file, 'a', newline='')
+        self.csvwriter = csv.writer(self.csvfile)
+        self.lock = threading.Lock()
+    
+    def __del__(self):
+        del self.csvwriter
+        self.csvfile.close()
+
+    def _load_cache(self) -> dict:
+        if not os.path.exists(self.cache_file):
+            return {}
+        cache = {}
+        with open(self.cache_file, 'r') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                aqft_type, gate_type, n, num_digits, gate_count, m = row
+                cache[(aqft_type, gate_type, int(n), int(num_digits))] = (int(gate_count), int(m) if m else None)
+        return cache
+
+    def get(self, aqft_type: str, gate_type: str, n: int, num_digits: int) -> Optional[Tuple[int, int]]:
+        return self.cache.get((aqft_type, gate_type, n, num_digits))
+
+    def set(self, aqft_type: str, gate_type: str, n: int, num_digits: int, gate_count: int, m: int):
+        with self.lock:
+            if (aqft_type, gate_type, n, num_digits) in self.cache:
+                return
+            self.cache[(aqft_type, gate_type, n, num_digits)] = (gate_count, m)
+            self.csvwriter.writerow([aqft_type, gate_type, n, num_digits, gate_count, m])
+            self.csvfile.flush()
 
 def run_haskell_program(type_str, size, num_digits, base_str="Standard", trim_controls=False):
     args = [
@@ -45,25 +81,11 @@ def parse_output(output: str, gate_type: str):
     
     return ms, gate_counts
 
-def cache_result(aqft_type: str, gate_type: str, n: int, num_digits: int, gate_count: int, m: int, cache_file: str):
-    with open(cache_file, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow([aqft_type, gate_type, n, num_digits, gate_count, m])
-
-def load_cache(cache_file: str) -> dict:
-    if not os.path.exists(cache_file):
-        return {}
-    cache = {}
-    with open(cache_file, 'r') as csvfile:
-        reader = csv.reader(csvfile)
-        for row in reader:
-            aqft_type, gate_type, n, num_digits, gate_count, m = row
-            cache[(aqft_type, gate_type, int(n), int(num_digits))] = (int(gate_count), int(m) if m else None)
-    return cache
-
-def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, cache: Optional[dict] = None) -> Tuple[int, int]:
-    if cache and (aqft_type, gate_type, n, num_digits) in cache:
-        return cache[(aqft_type, gate_type, n, num_digits)]
+def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, cache: Optional[Cache] = None) -> Tuple[int, int]:
+    if cache:
+        cached_result = cache.get(aqft_type, gate_type, n, num_digits)
+        if cached_result:
+            return cached_result
     
     output = run_haskell_program(aqft_type, n, num_digits)
     if not output:
@@ -74,7 +96,14 @@ def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, 
     min_index = gate_counts.index(min_gate_count)
     best_m = ms[min_index]
     
+    if cache:
+        cache.set(aqft_type, gate_type, n, num_digits, min_gate_count, best_m)
+    
     return min_gate_count, best_m
+
+def get_min_gate_count_parallel(args):
+    aqft_type, gate_type, n, num_digits, cache = args
+    return n, num_digits, get_min_gate_count(aqft_type, gate_type, n, num_digits, cache)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
@@ -84,7 +113,7 @@ if __name__ == "__main__":
     parser.add_argument("max_digits", metavar="MAX_DIGITS", type=int, help="The maximum number of digits for the minimum accuracy")
     parser.add_argument("save_file", nargs="?", type=str, help="The file to save the output if provided. Otherwise, the graph is shown")
     parser.add_argument("--single", "-s", action="store_true", help="If present, will find the gate count for only the specified arguments")
-    parser.add_argument("--cache_file", type=str, default="cache.csv", help="The file to cache the results")
+    parser.add_argument("--cache-file", type=str, default="cache.csv", help="The file to cache the results")
     
     args = parser.parse_args()
 
@@ -94,13 +123,12 @@ if __name__ == "__main__":
     gate_type = args.gate_type
     cache_file = args.cache_file
 
-    cache = load_cache(cache_file)
+    cache = Cache(args.cache_file) if args.cache_file else None
         
     if args.single:
         gate_count, m = get_min_gate_count(aqft_type, gate_type, max_size, max_digits, cache)
         print(f"T count: {gate_count}")
         print(f"Approx:  {m}")
-        cache_result(aqft_type, gate_type, max_size, max_digits, gate_count, m, cache_file)
         sys.exit(0)
 
     sizes = range(2, max_size + 1)
@@ -113,12 +141,14 @@ if __name__ == "__main__":
     max_gate_count_approx = 0
     max_gate_count_digits = 0
 
-    length = len(sizes)
-    for i, n in enumerate(sizes):
-        for j, num_digits in enumerate(digits):
-            gate_count, m = get_min_gate_count(aqft_type, gate_type, n, num_digits, cache)
-            min_gate_counts[i, j] = gate_count
-            cache_result(aqft_type, gate_type, n, num_digits, gate_count, m, cache_file)
+    tasks = [(aqft_type, gate_type, n, num_digits, cache) for n in sizes for num_digits in digits]
+    length = len(tasks)
+
+    with ThreadPoolExecutor() as executor:
+        futures = {executor.submit(get_min_gate_count_parallel, task): task for task in tasks}
+        for i, future in enumerate(as_completed(futures)):
+            n, num_digits, (gate_count, m) = future.result()
+            min_gate_counts[n - 2, num_digits - 1] = gate_count
 
             if gate_count > max_gate_count:
                 max_gate_count = gate_count
@@ -126,8 +156,8 @@ if __name__ == "__main__":
                 max_gate_count_approx = m
                 max_gate_count_digits = num_digits
 
-        progress = i / length * 100
-        print(f"Progress: {progress:.2f}%", end="\r", flush=True)
+            progress = (i + 1) / length * 100
+            print(f"Progress: {progress:.2f}%", end="\r", flush=True)
 
     print(f"Largest T count:      {max_gate_count}")
     print(f"Corresponding size:   {max_gate_count_size}")
