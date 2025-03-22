@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 import argparse
 import csv
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ class Cache:
     def __init__(self, cache_file: str):
         self.cache_file = cache_file
         self.cache = self._load_cache()
-        self.csvfile = open(self.cache_file, 'a', newline='')
+        self.csvfile = open(self.cache_file, "a", newline="")
         self.csvwriter = csv.writer(self.csvfile)
         self.lock = threading.Lock()
     
@@ -26,7 +26,7 @@ class Cache:
         if not os.path.exists(self.cache_file):
             return {}
         cache = {}
-        with open(self.cache_file, 'r') as csvfile:
+        with open(self.cache_file, "r") as csvfile:
             reader = csv.reader(csvfile)
             for row in reader:
                 aqft_type, gate_type, n, num_digits, gate_count, m = row
@@ -44,7 +44,21 @@ class Cache:
             self.csvwriter.writerow([aqft_type, gate_type, n, num_digits, gate_count, m])
             self.csvfile.flush()
 
-def run_haskell_program(type_str, size, num_digits, base_str="Standard", trim_controls=False):
+def aqft_type_map(aqft_type: str) -> str:
+    return {
+        "Aqft": "Approximate Quantum Fourier Transform",
+        "CatAqft": "Catalytic Approximate Quantum Fourier Transform",
+    }.get(aqft_type)
+
+def build_haskell_program() -> None:
+    args = ["cabal", "build", "count", "-O2"]
+    this_dir = os.path.dirname(__file__)
+    result = subprocess.run(args, cwd=this_dir, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr)
+        exit(result.returncode)
+
+def run_haskell_program(type_str, size, num_digits, base_str="Standard") -> str:
     args = [
         "cabal", "run", "count", "-O2", "--",
         type_str,
@@ -52,8 +66,6 @@ def run_haskell_program(type_str, size, num_digits, base_str="Standard", trim_co
         str(num_digits),
         base_str,
     ]
-    if trim_controls:
-        args.append("--trim-controls")
     
     this_dir = os.path.dirname(__file__)
     result = subprocess.run(args, cwd=this_dir, capture_output=True, text=True)
@@ -67,19 +79,15 @@ t_star_gate_pattern = re.compile(r'(\d+): "T\*, arity 1"')
 t_gate_pattern = re.compile(r'(\d+): "T, arity 1"')
 cnot_gate_pattern = re.compile(r'(\d+): "not, arity 1", controls 1')
 
-def parse_output(output: str, gate_type: str):
+def parse_output(output: str) -> Tuple[List[int], List[int], List[int]]:
     ms = [int(match.group(1)) for match in m_pattern.finditer(output)]
     
-    if gate_type == "T":
-        t_star_gate_counts = [int(match.group(1)) for match in t_star_gate_pattern.finditer(output)]
-        t_gate_counts = [int(match.group(1)) for match in t_gate_pattern.finditer(output)]
-        gate_counts = [x + y for x, y in zip(t_star_gate_counts, t_gate_counts)]
-    elif gate_type == "CNOT":
-        gate_counts = [int(match.group(1)) for match in cnot_gate_pattern.finditer(output)]
-    else:
-        raise ValueError(f"Unrecognized gate type: {gate_type}")
+    t_star_gate_counts = [int(match.group(1)) for match in t_star_gate_pattern.finditer(output)]
+    t_gate_counts = [int(match.group(1)) for match in t_gate_pattern.finditer(output)]
+    t_gate_counts = [x + y for x, y in zip(t_star_gate_counts, t_gate_counts)]
+    cnot_gate_counts = [int(match.group(1)) for match in cnot_gate_pattern.finditer(output)]
     
-    return ms, gate_counts
+    return ms, t_gate_counts, cnot_gate_counts
 
 def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, cache: Optional[Cache] = None) -> Tuple[int, int]:
     if cache:
@@ -90,11 +98,14 @@ def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, 
     output = run_haskell_program(aqft_type, n, num_digits)
     if not output:
         return 0, None
-    ms, gate_counts = parse_output(output, gate_type)
+    ms, t_gate_counts, cnot_gate_counts = parse_output(output)
 
-    min_gate_count = min(gate_counts)
-    min_index = gate_counts.index(min_gate_count)
+    min_t_gate_count = min(t_gate_counts)
+    min_index = t_gate_counts.index(min_t_gate_count)
+    min_cnot_gate_count = cnot_gate_counts[min_index]
     best_m = ms[min_index]
+    
+    min_gate_count = min_t_gate_count if gate_type == "T" else min_cnot_gate_count
     
     if cache:
         cache.set(aqft_type, gate_type, n, num_digits, min_gate_count, best_m)
@@ -127,7 +138,7 @@ if __name__ == "__main__":
         
     if args.single:
         gate_count, m = get_min_gate_count(aqft_type, gate_type, max_size, max_digits, cache)
-        print(f"T count: {gate_count}")
+        print(f"{gate_type} count: {gate_count}")
         print(f"Approx:  {m}")
         sys.exit(0)
 
@@ -143,6 +154,8 @@ if __name__ == "__main__":
 
     tasks = [(aqft_type, gate_type, n, num_digits, cache) for n in sizes for num_digits in digits]
     length = len(tasks)
+    
+    build_haskell_program()
 
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(get_min_gate_count_parallel, task): task for task in tasks}
@@ -159,22 +172,22 @@ if __name__ == "__main__":
             progress = (i + 1) / length * 100
             print(f"Progress: {progress:.2f}%", end="\r", flush=True)
 
-    print(f"Largest T count:      {max_gate_count}")
-    print(f"Corresponding size:   {max_gate_count_size}")
-    print(f"Corresponding approx: {max_gate_count_approx}")
-    print(f"Corresponding digits: {max_gate_count_digits}")
+    print(f"Largest {gate_type} count:\t{max_gate_count}")
+    print(f"Corresponding size:\t{max_gate_count_size}")
+    print(f"Corresponding approx:\t{max_gate_count_approx}")
+    print(f"Corresponding digits:\t{max_gate_count_digits}")
 
     X, Y = np.meshgrid(digits, sizes)
     Z = min_gate_counts
 
     fig = plt.figure(figsize=(12, 8), dpi=100)
-    ax = fig.add_subplot([0.05, 0.05, 0.95, 0.95], projection='3d')
-    ax.plot_surface(X, Y, Z, cmap='viridis', antialiased=False)
+    ax = fig.add_subplot([0.05, 0.05, 0.95, 0.95], projection="3d")
+    ax.plot_surface(X, Y, Z, cmap="viridis", antialiased=False)
     ax.azim = -135
 
-    ax.set_xlabel('Digits of Accuracy')
-    ax.set_ylabel('Number of Qubits')
-    ax.set_zlabel('Minimum T-count')
+    ax.set_xlabel("Digits of Accuracy")
+    ax.set_ylabel("Number of Qubits")
+    ax.set_zlabel(f"Minimum {gate_type}-count")
 
     if args.save_file:
         plt.savefig(args.save_file)
