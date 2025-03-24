@@ -28,7 +28,7 @@ import Quipper.Internal.Printing
     print_generic,
   )
 import Quipper.Libraries.Decompose
-  ( GateBase (Exact, TrimControls),
+  ( GateBase (Exact, TrimControls, Logical),
     Precision,
   )
 import Quipper.Libraries.Decompose.GateBase
@@ -117,7 +117,7 @@ circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
 circFromString typeStr approx =
   case typeStr of
     "Aqft" -> aqft approx
-    "CatAqft" -> catalytic_aqft approx
+    "CatAqft" -> \x -> fmap (uncurry (++)) (catalytic_aqft approx x Nothing)
     _ -> error "Unknown Aqft type"
 
 baseFromString :: String -> StdGen -> Precision -> GateBase
@@ -127,6 +127,7 @@ baseFromString baseStr g precision =
     "Standard" -> Standard precision (RandomSource g)
     "Strict" -> Strict precision (RandomSource g)
     "Approximate" -> Approximate False precision (RandomSource g)
+    "Logical" -> Logical
     _ -> error "Unknown base"
 
 createAllAqft :: (Int -> [Qubit] -> Circ [Qubit]) -> Int -> Double -> [([Qubit] -> Circ [Qubit], Double, Int, Double, Int, Double, Double)]
@@ -144,12 +145,12 @@ createAllAqft circFunc n error =
 printCircuit :: Int -> (Precision -> GateBase) -> ([Qubit] -> Circ [Qubit], Double, Int, Double, Int, Double, Double) -> IO ()
 printCircuit size baseFunc (circ, totalErr, approx, gateCutErr, approxGateCount, gateErr, decompErr) = do
   printf "\nTotal error:                  %f\n" totalErr
-  printf   "m:                            %d\n" approx
-  printf   "Gate cutting error:           %f\n" gateCutErr
-  printf   "Gate cutting ratio:           %f\n" (gateCutErr / totalErr)
-  printf   "Number of approximate gates:  %d\n" approxGateCount
-  printf   "Decomposition error per gate: %f\n" gateErr
-  printf   "Decomposition error:          %f\n" decompErr
+  printf "m:                            %d\n" approx
+  printf "Gate cutting error:           %f\n" gateCutErr
+  printf "Gate cutting ratio:           %f\n" (gateCutErr / totalErr)
+  printf "Number of approximate gates:  %d\n" approxGateCount
+  printf "Decomposition error per gate: %f\n" gateErr
+  printf "Decomposition error:          %f\n" decompErr
   let precisionPerGate = (- logBase 10 gateErr) * digits
       decompCirc = decompose_generic (baseFunc precisionPerGate) circ
   putStrLn "Circuit:"

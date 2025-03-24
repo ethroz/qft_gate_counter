@@ -61,14 +61,19 @@ def build_haskell_program() -> None:
         print(result.stderr)
         exit(result.returncode)
 
-def run_haskell_program(type_str, size, num_digits, base_str="Standard") -> str:
+def run_haskell_program(type_str: str, size: int, num_digits: float, exact: bool) -> str:
     args = [
         "cabal", "run", "count", "-O2", "--",
         type_str,
         str(size),
         str(num_digits),
-        base_str,
     ]
+    if exact:
+        args.append("Logical")
+        args.append("--trim-controls")
+        args.append("--exact")
+    else:
+        args.append("Standard")
 
     this_dir = os.path.dirname(__file__)
     result = subprocess.run(args, cwd=this_dir, capture_output=True, text=True)
@@ -92,13 +97,13 @@ def parse_output(output: str) -> Tuple[List[int], List[int], List[int]]:
 
     return ms, t_gate_counts, cnot_gate_counts
 
-def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, cache: Optional[Cache] = None) -> Tuple[int, int]:
+def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, exact: bool, cache: Optional[Cache] = None) -> Tuple[int, int]:
     if cache:
         cached_result = cache.get(aqft_type, gate_type, n, num_digits)
         if cached_result:
             return cached_result
 
-    output = run_haskell_program(aqft_type, n, num_digits)
+    output = run_haskell_program(aqft_type, n, num_digits, exact)
     if not output:
         return 0, None
     ms, t_gate_counts, cnot_gate_counts = parse_output(output)
@@ -116,8 +121,8 @@ def get_min_gate_count(aqft_type: str, gate_type: str, n: int, num_digits: int, 
     return min_gate_count, best_m
 
 def get_min_gate_count_parallel(args):
-    aqft_type, gate_type, n, num_digits, cache = args
-    return n, num_digits, get_min_gate_count(aqft_type, gate_type, n, num_digits, cache)
+    aqft_type, gate_type, n, num_digits, exact, cache = args
+    return n, num_digits, get_min_gate_count(aqft_type, gate_type, n, num_digits, exact, cache)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Print the gate counts for the AQFT in the specified GateBase")
@@ -126,6 +131,7 @@ if __name__ == "__main__":
     parser.add_argument("max_size", metavar="MAX_SIZE", type=int, help="The maximum number of qubits in the aqft")
     parser.add_argument("max_digits", metavar="MAX_DIGITS", type=int, help="The maximum number of digits for the minimum accuracy")
     parser.add_argument("save_file", nargs="?", type=str, help="The file to save the output if provided. Otherwise, the graph is shown")
+    parser.add_argument("--exact", "-e", action="store_true", help="If present, will convert all exact circuits to Clifford+T")
     parser.add_argument("--single", "-s", action="store_true", help="If present, will find the gate count for only the specified arguments")
     parser.add_argument("--cache-file", type=str, default="cache.csv", help="The file to cache the results")
 
@@ -136,12 +142,13 @@ if __name__ == "__main__":
     max_digits = args.max_digits
     gate_type = args.gate_type
     cache_file = args.cache_file
+    exact = args.exact
     is_3d = max_digits != 0
 
-    cache = Cache(args.cache_file) if args.cache_file else None
+    cache = Cache(args.cache_file) if args.cache_file and not exact else None
 
     if args.single:
-        gate_count, m = get_min_gate_count(aqft_type, gate_type, max_size, max_digits, cache)
+        gate_count, m = get_min_gate_count(aqft_type, gate_type, max_size, max_digits, exact, cache)
         print(f"{gate_type} count: {gate_count}")
         print(f"Approx:  {m}")
         sys.exit(0)
@@ -156,7 +163,7 @@ if __name__ == "__main__":
     max_gate_count_approx = 0
     max_gate_count_digits = 0
 
-    tasks = [(aqft_type, gate_type, n, num_digits, cache) for n in sizes for num_digits in digits]
+    tasks = [(aqft_type, gate_type, n, num_digits, exact, cache) for n in sizes for num_digits in digits]
     length = len(tasks)
 
     build_haskell_program()

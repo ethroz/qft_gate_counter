@@ -10,12 +10,13 @@ import Quipper
     hadamard,
     map_hadamard,
   )
-import Quipper.Internal.Generic (with_ancilla_list)
 import Quipper.Internal.Labels (comment_with_label)
 import Quipper.Libraries.Arith (qdint_of_qulist_bh, qdint_of_qulist_lh, qulist_of_qdint_bh, qulist_of_qdint_lh)
 import Arithmetic (q_controlled_linear_sub_in_place)
 import Control.Monad (when)
 import Phases (map_phase_little_endian)
+import Data.Maybe (isJust)
+import Quipper.Internal.Monad (qinit_list)
 
 catalytic_aqft_impl :: Int -> [Qubit] -> [Qubit] -> Circ ([Qubit], [Qubit])
 catalytic_aqft_impl _ [] as = return ([], as)
@@ -38,19 +39,24 @@ catalytic_aqft_impl approx (x : xs) as = do
           as = other_ancillas ++ qulist_of_qdint_lh y
       return (qs, as)
 
-catalytic_aqft :: Int -> [Qubit] -> Circ [Qubit]
-catalytic_aqft approx qs = do
+catalytic_aqft :: Int -> [Qubit] -> Maybe [Qubit] -> Circ ([Qubit], [Qubit])
+catalytic_aqft approx qs as = do
   when (approx < 1 || approx > length qs) $ error "approx must be between 1 and the number of qubits"
   let approx' = catalytic_aqft_phase_gate_count approx
-  with_ancilla_list approx' $ \as -> do
-    as <- map_hadamard as
-    as <- map_phase_little_endian as
-    comment_with_label "ENTER: catalytic aqft" qs "qs"
-    comment "Reverse"
-    let qs' = reverse qs
-    (qs, _) <- catalytic_aqft_impl approx' qs' as
-    comment_with_label "EXIT: catalytic aqft" qs "qs"
-  return qs
+  when (isJust as && length as /= approx') $ error "Existing phase banks must have size one more than approx"
+  as' <- case as of
+    Nothing -> do
+      as' <- qinit_list (replicate approx' False)
+      as' <- map_hadamard as'
+      map_phase_little_endian as'
+    Just as' -> return as'
+
+  comment_with_label "ENTER: catalytic aqft" qs "qs"
+  comment "Reverse"
+  let qs' = reverse qs
+  (qs', as') <- catalytic_aqft_impl approx' qs' as'
+  comment_with_label "EXIT: catalytic aqft" qs' "qs"
+  return (qs', as')
 
 catalytic_aqft_phase_gate_count :: Int -> Int
 catalytic_aqft_phase_gate_count m = if m > 1 then m else 0

@@ -34,7 +34,7 @@ aqft_impl approx (x : xs) = do
           q <- case exp of
             2 -> gate_S q `controlled` c
             3 -> gate_T q `controlled` c
-            _ -> rGate (l + 1) q `controlled` c
+            _ -> rGate exp q `controlled` c
           qs <- rotations n approx c qs
           return (q : qs)
         else return (q : qs)

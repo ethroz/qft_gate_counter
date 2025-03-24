@@ -28,7 +28,7 @@ import Quipper (Circ, Format (GateCount, Preview), Qubit, qubit)
 import Quipper.Internal.Printing
   ( print_generic,
   )
-import Quipper.Libraries.Decompose (GateBase (Exact, Logical, TrimControls), Precision)
+import Quipper.Libraries.Decompose (GateBase (Exact, Logical, TrimControls, Binary), Precision)
 import Quipper.Libraries.Decompose.GateBase
   ( GateBase (Approximate, CliffordT, Standard, Strict),
     decompose_generic,
@@ -136,7 +136,7 @@ circFromString :: String -> Int -> [Qubit] -> Circ [Qubit]
 circFromString typeStr approx =
   case typeStr of
     "Aqft" -> aqft approx
-    "CatAqft" -> catalytic_aqft approx
+    "CatAqft" -> \x -> fmap (uncurry (++)) (catalytic_aqft approx x Nothing)
     _ -> error "Unknown Aqft type"
 
 baseFromString :: String -> StdGen -> Precision -> GateBase
