@@ -200,13 +200,16 @@ if __name__ == "__main__":
         ax.set_xlabel("Digits of Accuracy")
         ax.set_ylabel("Number of Qubits")
         ax.set_zlabel(f"Minimum {gate_type}-count")
-    else:        
-        # Perform regression to determine if the plot is closer to n*log(n) or n^2
+    else:
+        # Perform regression to determine if the plot is closer to n*log(n), n^2, or n*log^2(n)
         def n_log_n(x, a):
             return a * x * np.log(x)
 
         def n_squared(x, a):
             return a * x**2
+
+        def n_log_squared_n(x, a):
+            return a * x * (np.log(x)**2)
 
         x_data = np.array(sizes)
         y_data = min_gate_counts[:, 0]
@@ -219,27 +222,36 @@ if __name__ == "__main__":
         params_n2, _ = curve_fit(n_squared, x_data, y_data)
         y_fit_n2 = n_squared(x_data, *params_n2)
 
+        # Fit the data to n*log^2(n)
+        params_nlog2n, _ = curve_fit(n_log_squared_n, x_data, y_data)
+        y_fit_nlog2n = n_log_squared_n(x_data, *params_nlog2n)
+
         # Plot the original data and the fits
         plt.plot(x_data, y_data, label="Original Data")
         plt.plot(x_data, y_fit_nlogn, label="n*log(n) fit", linestyle="--")
         plt.plot(x_data, y_fit_n2, label="n^2 fit", linestyle="--")
+        plt.plot(x_data, y_fit_nlog2n, label="n*log^2(n) fit", linestyle="--")
         plt.legend()
-        
+
         plt.xlabel("Number of Qubits")
         plt.ylabel(f"Minimum {gate_type}-count")
         plt.title(f"Minimum {gate_type}-count vs Number of Qubits for 0 Digits of Accuracy")
-        
+
         # Determine which fit is better
         residuals_nlogn = y_data - y_fit_nlogn
         residuals_n2 = y_data - y_fit_n2
+        residuals_nlog2n = y_data - y_fit_nlog2n
 
         ss_res_nlogn = np.sum(residuals_nlogn**2)
         ss_res_n2 = np.sum(residuals_n2**2)
+        ss_res_nlog2n = np.sum(residuals_nlog2n**2)
 
-        if ss_res_nlogn < ss_res_n2:
+        if ss_res_nlogn < ss_res_n2 and ss_res_nlogn < ss_res_nlog2n:
             print("The n*log(n) fit is better.")
-        else:
+        elif ss_res_n2 < ss_res_nlogn and ss_res_n2 < ss_res_nlog2n:
             print("The n^2 fit is better.")
+        else:
+            print("The n*log^2(n) fit is better.")
 
     if args.save_file:
         plt.savefig(args.save_file)
