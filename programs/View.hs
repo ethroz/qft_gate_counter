@@ -28,7 +28,7 @@ import Quipper (Circ, Format (GateCount, Preview), Qubit, qubit)
 import Quipper.Internal.Printing
   ( print_generic,
   )
-import Quipper.Libraries.Decompose (GateBase (Exact, Logical, TrimControls, Binary), Precision)
+import Quipper.Libraries.Decompose (GateBase (Exact, Logical, TrimControls), Precision)
 import Quipper.Libraries.Decompose.GateBase
   ( GateBase (Approximate, CliffordT, Standard, Strict),
     decompose_generic,
