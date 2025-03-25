@@ -245,6 +245,9 @@ if __name__ == "__main__":
         ss_res_nlogn = np.sum(residuals_nlogn**2)
         ss_res_n2 = np.sum(residuals_n2**2)
         ss_res_nlog2n = np.sum(residuals_nlog2n**2)
+        print(f"Residual sum of squares for n*log(n) fit: {ss_res_nlogn}")
+        print(f"Residual sum of squares for n^2 fit: {ss_res_n2}")
+        print(f"Residual sum of squares for n*log^2(n) fit: {ss_res_nlog2n}")
 
         if ss_res_nlogn < ss_res_n2 and ss_res_nlogn < ss_res_nlog2n:
             print("The n*log(n) fit is better.")
